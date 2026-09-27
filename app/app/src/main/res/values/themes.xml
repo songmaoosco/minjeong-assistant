@@ -1,0 +1,3 @@
+<resources>
+    <style name="Theme.Minjeong" parent="Theme.MaterialComponents.DayNight.NoActionBar" />
+</resources>
