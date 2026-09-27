@@ -63,10 +63,14 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     }
 
     override fun onInit(status: Int) {
-        if (status == TextToSpeech.SUCCESS) {
-            val result = tts.setLanguage(Locale.KOREAN)
-            ttsReady = result != TextToSpeech.LANG_MISSING_DATA &&
-                    result != TextToSpeech.LANG_NOT_SUPPORTED
+    if (status == TextToSpeech.SUCCESS) {
+        val result = tts.setLanguage(Locale.KOREAN)
+        ttsReady = result != TextToSpeech.LANG_MISSING_DATA &&
+                result != TextToSpeech.LANG_NOT_SUPPORTED
+        tts.setPitch(0.7f)
+        tts.setSpeechRate(0.65f)
+    }
+}
         }
     }
 
