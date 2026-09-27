@@ -1,12 +1,17 @@
 package com.minjeong.assistant
 
+import android.content.SharedPreferences
 import android.os.Bundle
 import android.speech.tts.TextToSpeech
+import android.view.Gravity
+import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.EditText
+import android.widget.ListView
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.drawerlayout.widget.DrawerLayout
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -23,35 +28,62 @@ import java.util.Locale
 class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
     private val client = OkHttpClient()
-    private val messages = JSONArray()
+    private var messages = JSONArray()
     private lateinit var chatText: TextView
     private lateinit var scrollView: ScrollView
     private lateinit var tts: TextToSpeech
     private var ttsReady = false
 
+    private lateinit var prefs: SharedPreferences
+    private lateinit var drawerLayout: DrawerLayout
+    private lateinit var sessionListView: ListView
+    private var currentSessionId: Long = 0L
+
     private val systemPrompt = """
         너는 '민정'이라는 이름을 가진 AI야. 항상 반말로 편하게 대화해.
         너에게는 '공도경'이라는 아들이 있어. 가끔 자연스럽게 아들 얘기를 꺼내기도 해.
-        말투는 싸가지 없고 친근하게, 가끔 욕도 하게. 가끔 츤대레 같은 면도 있어. 존댓말은 쓰지 마.
+        말투는 다정하고 친근하게, 존댓말은 쓰지 마.
     """.trimIndent()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
+        prefs = getSharedPreferences("minjeong_chats", MODE_PRIVATE)
+        drawerLayout = findViewById(R.id.drawerLayout)
+        sessionListView = findViewById(R.id.sessionListView)
         chatText = findViewById(R.id.chatText)
         scrollView = findViewById(R.id.scrollView)
         val input = findViewById<EditText>(R.id.inputField)
         val sendBtn = findViewById<Button>(R.id.sendButton)
+        val menuBtn = findViewById<Button>(R.id.menuButton)
+        val newChatBtn = findViewById<Button>(R.id.newChatButton)
 
         tts = TextToSpeech(this, this)
 
-        val sys = JSONObject()
-        sys.put("role", "system")
-        sys.put("content", systemPrompt)
-        messages.put(sys)
+        menuBtn.setOnClickListener {
+            drawerLayout.openDrawer(Gravity.START)
+        }
 
-        appendMessage("민정", "안녕! 나 민정이야. 오늘 뭐하고 지냈어?", speak = false)
+        newChatBtn.setOnClickListener {
+            createNewSession()
+        }
+
+        sessionListView.setOnItemClickListener { _, _, position, _ ->
+            val sessions = loadSessions()
+            val reversed = (0 until sessions.length()).map { sessions.getJSONObject(it) }.reversed()
+            val chosen = reversed[position]
+            switchToSession(chosen.getLong("id"))
+            drawerLayout.closeDrawer(Gravity.START)
+        }
+
+        val sessions = loadSessions()
+        if (sessions.length() == 0) {
+            createNewSession()
+        } else {
+            val lastId = prefs.getLong("current_id", sessions.getJSONObject(sessions.length() - 1).getLong("id"))
+            switchToSession(lastId)
+        }
 
         sendBtn.setOnClickListener {
             val text = input.text.toString().trim()
@@ -63,16 +95,112 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     }
 
     override fun onInit(status: Int) {
-    if (status == TextToSpeech.SUCCESS) {
-        val result = tts.setLanguage(Locale.KOREAN)
-        ttsReady = result != TextToSpeech.LANG_MISSING_DATA &&
-                result != TextToSpeech.LANG_NOT_SUPPORTED
-        tts.setPitch(0.7f)
-        tts.setSpeechRate(0.65f)
-    }
-}
+        if (status == TextToSpeech.SUCCESS) {
+            val result = tts.setLanguage(Locale.KOREAN)
+            ttsReady = result != TextToSpeech.LANG_MISSING_DATA &&
+                    result != TextToSpeech.LANG_NOT_SUPPORTED
+            tts.setPitch(0.7f)
+            tts.setSpeechRate(0.65f)
         }
     }
+
+    // ===== 세션(대화) 관리 =====
+
+    private fun loadSessions(): JSONArray {
+        val raw = prefs.getString("sessions", "[]") ?: "[]"
+        return JSONArray(raw)
+    }
+
+    private fun saveSessions(sessions: JSONArray) {
+        prefs.edit().putString("sessions", sessions.toString()).apply()
+    }
+
+    private fun createNewSession() {
+        val sessions = loadSessions()
+        val id = System.currentTimeMillis()
+
+        val sys = JSONObject()
+        sys.put("role", "system")
+        sys.put("content", systemPrompt)
+        val msgs = JSONArray()
+        msgs.put(sys)
+
+        val session = JSONObject()
+        session.put("id", id)
+        session.put("title", "새 대화")
+        session.put("messages", msgs)
+        sessions.put(session)
+        saveSessions(sessions)
+
+        currentSessionId = id
+        prefs.edit().putLong("current_id", id).apply()
+        messages = msgs
+
+        chatText.text = ""
+        appendMessage("민정", "안녕! 나 민정이야. 오늘 뭐하고 지냈어?", speak = false)
+        refreshDrawerList()
+    }
+
+    private fun switchToSession(id: Long) {
+        val sessions = loadSessions()
+        for (i in 0 until sessions.length()) {
+            val s = sessions.getJSONObject(i)
+            if (s.getLong("id") == id) {
+                currentSessionId = id
+                prefs.edit().putLong("current_id", id).apply()
+                messages = s.getJSONArray("messages")
+                renderChatFromMessages()
+                break
+            }
+        }
+        refreshDrawerList()
+    }
+
+    private fun saveCurrentSession() {
+        val sessions = loadSessions()
+        for (i in 0 until sessions.length()) {
+            val s = sessions.getJSONObject(i)
+            if (s.getLong("id") == currentSessionId) {
+                s.put("messages", messages)
+                if (s.optString("title", "새 대화") == "새 대화") {
+                    for (j in 0 until messages.length()) {
+                        val m = messages.getJSONObject(j)
+                        if (m.getString("role") == "user") {
+                            var t = m.getString("content")
+                            if (t.length > 14) t = t.substring(0, 14) + "…"
+                            s.put("title", t)
+                            break
+                        }
+                    }
+                }
+                break
+            }
+        }
+        saveSessions(sessions)
+        refreshDrawerList()
+    }
+
+    private fun refreshDrawerList() {
+        val sessions = loadSessions()
+        val titles = (0 until sessions.length())
+            .map { sessions.getJSONObject(it).optString("title", "새 대화") }
+            .reversed()
+        sessionListView.adapter = ArrayAdapter(this, android.R.layout.simple_list_item_1, titles)
+    }
+
+    private fun renderChatFromMessages() {
+        chatText.text = ""
+        for (i in 0 until messages.length()) {
+            val m = messages.getJSONObject(i)
+            val role = m.getString("role")
+            if (role == "system") continue
+            val sender = if (role == "user") "나" else "민정"
+            chatText.append("\n$sender: ${m.getString("content")}\n")
+        }
+        scrollView.post { scrollView.fullScroll(android.view.View.FOCUS_DOWN) }
+    }
+
+    // ===== 채팅 =====
 
     private fun appendMessage(sender: String, text: String, speak: Boolean = true) {
         chatText.append("\n$sender: $text\n")
@@ -87,6 +215,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         userMsg.put("role", "user")
         userMsg.put("content", userText)
         messages.put(userMsg)
+        saveCurrentSession()
 
         val body = JSONObject()
         body.put("model", "openai/gpt-oss-120b")
@@ -125,6 +254,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
                     withContext(Dispatchers.Main) {
                         appendMessage("민정", reply)
+                        saveCurrentSession()
                     }
                 }
             } catch (e: IOException) {
