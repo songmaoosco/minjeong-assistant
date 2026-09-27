@@ -15,13 +15,11 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
 
       - name: Build APK with Gradle
-        run: |
-          chmod +x gradlew || true
-          ./gradlew assembleDebug || gradle assembleDebug
+        run: gradle assembleDebug -PGROQ_API_KEY=${{ secrets.GROQ_API_KEY }}
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
