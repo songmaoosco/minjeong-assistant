@@ -85,7 +85,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         messages.put(userMsg)
 
         val body = JSONObject()
-        body.put("model", "llama-3.3-70b-versatile")
+        body.put("model", "openai/gpt-oss-120b")
         body.put("messages", messages)
 
         val mediaType = "application/json".toMediaType()
