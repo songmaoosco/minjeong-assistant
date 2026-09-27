@@ -17,6 +17,8 @@ jobs:
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.4'
 
       - name: Build APK with Gradle
         run: gradle assembleDebug -PGROQ_API_KEY=${{ secrets.GROQ_API_KEY }}
