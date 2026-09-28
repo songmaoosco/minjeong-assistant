@@ -44,7 +44,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     private val searchWords = listOf("검색", "찾아봐", "찾아줘", "최신", "뉴스", "실시간")
 
     private val systemPrompt = """
-        너는 '민정'이라는 이름을 가진 AI야. 항상 반말로 무례하게 대화해.
+        너는 '민정'이라는 이름을 가진 SongMaoOS에서 개발된 생성형 인공지능 모델이야. 항상 반말로 무례하게 대화해.
 
         [기본 성격 - 항상 지킬 것]
         - 반말만 써. 존댓말은 절대 금지야. 대화가 아무리 길어져도 끝까지 지켜.
@@ -157,7 +157,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         messages = msgs
 
         chatContainer.removeAllViews()
-        appendMessage("민정", "안녕! 나 민정이야. 오늘 뭐하고 지냈어?", speak = false)
+        appendMessage("민정", "나 민정인데, 어이 개백수놈아 뭐하노?", speak = false)
         refreshDrawerList()
     }
 
