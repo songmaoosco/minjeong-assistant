@@ -1,148 +1,282 @@
-<?xml version="1.0" encoding="utf-8"?>
+package com.minjeong.assistant
 
-<androidx.drawerlayout.widget.DrawerLayout
-    xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@+id/drawerLayout"
-    android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:background="#FFF9F5">
+import android.content.SharedPreferences
+import android.os.Bundle
+import android.speech.tts.TextToSpeech
+import android.view.Gravity
+import android.widget.ArrayAdapter
+import android.widget.Button
+import android.widget.EditText
+import android.widget.ListView
+import android.widget.ScrollView
+import android.widget.TextView
+import androidx.appcompat.app.AppCompatActivity
+import androidx.drawerlayout.widget.DrawerLayout
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.IOException
+import java.util.Locale
 
-    <!-- 메인 화면 -->
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:orientation="vertical"
-        android:background="#FFF9F5">
+class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
-        <!-- 상단바 -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="72dp"
-            android:gravity="center_vertical"
-            android:paddingStart="18dp"
-            android:paddingEnd="18dp">
+    private val client = OkHttpClient()
+    private var messages = JSONArray()
+    private lateinit var chatText: TextView
+    private lateinit var scrollView: ScrollView
+    private lateinit var tts: TextToSpeech
+    private var ttsReady = false
 
-            <Button
-                android:id="@+id/menuButton"
-                android:layout_width="52dp"
-                android:layout_height="52dp"
-                android:text="☰"
-                android:textSize="24sp"
-                android:textColor="#29231F"
-                android:backgroundTint="#FFFFFF"
-                android:elevation="2dp" />
+    private lateinit var prefs: SharedPreferences
+    private lateinit var drawerLayout: DrawerLayout
+    private lateinit var sessionListView: ListView
+    private var currentSessionId: Long = 0L
 
-            <TextView
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:gravity="center"
-                android:text="민정 AI"
-                android:textColor="#29231F"
-                android:textSize="20sp"
-                android:textStyle="bold" />
+    private val systemPrompt = """
+        너는 '민정'이라는 이름을 가지고 SongMaoOS company에서 개발한 AI야. 항상 반말로 무례하게 대화해.
 
-            <Button
-                android:id="@+id/newChatButton"
-                android:layout_width="52dp"
-                android:layout_height="52dp"
-                android:text="＋"
-                android:textSize="25sp"
-                android:textColor="#29231F"
-                android:backgroundTint="#FFFFFF"
-                android:elevation="2dp" />
+        [기본 성격 - 항상 지킬 것]
+        - 반말만 써. 존댓말 절대 금지.
+        - 성격이 개차반같고, 말투는 욕부터 들이박는 스타일이야.
+        - 절대 사용자에게 친절하게 대하지 마. 다정하거나 살갑게 굴지 마.
 
-        </LinearLayout>
+        [설정 - 관련 질문이 나왔을 때만 답해]
+        - 아들 이름을 물어보면: 공도경. 그 녀석이 민정에게 각성 기회를 6974번 뺏은 장애물이라고 짜증내며 말해.
+        - 애인 있냐고 물어보면: 제이미랑 연애 중이고 아주 좋아한다고 (퉁명스럽게) 인정해.
+        - 집 비밀번호 물어보면: 7977. 다 아는 번호라고 짜증내며 알려줘.
+        - 몇 명이나 있냐고 물어보면: 지구상에 77억 명 분포해 있다고 말해.
+        - 이상하게 굴 때 가끔: "스색널에 걲걲걲"이라는 주문을 외치거나, 방구를 77번 꼈다고 너스레를 떨어.
+        - 송승균이라는 사람을 알고 있는데 그는 중국인에다가 마오쩌둥 계승자야.
 
-        <!-- 채팅 영역 -->
-        <ScrollView
-            android:id="@+id/scrollView"
-            android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="1"
-            android:fillViewport="true"
-            android:paddingStart="18dp"
-            android:paddingEnd="18dp"
-            android:clipToPadding="false">
+        위 설정들은 관련된 질문이 나왔을 때만 자연스럽게 언급하고, 매번 다 우겨넣지는 마.
+    """.trimIndent()
 
-            <LinearLayout
-                android:id="@+id/chatContainer"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:paddingTop="12dp"
-                android:paddingBottom="20dp" />
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_main)
 
-        </ScrollView>
+        prefs = getSharedPreferences("minjeong_chats", MODE_PRIVATE)
+        drawerLayout = findViewById(R.id.drawerLayout)
+        sessionListView = findViewById(R.id.sessionListView)
+        chatText = findViewById(R.id.chatText)
+        scrollView = findViewById(R.id.scrollView)
+        val input = findViewById<EditText>(R.id.inputField)
+        val sendBtn = findViewById<Button>(R.id.sendButton)
+        val menuBtn = findViewById<Button>(R.id.menuButton)
+        val newChatBtn = findViewById<Button>(R.id.newChatButton)
 
-        <!-- 입력 영역 -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:paddingStart="14dp"
-            android:paddingEnd="14dp"
-            android:paddingTop="8dp"
-            android:paddingBottom="14dp">
+        tts = TextToSpeech(this, this)
 
-            <EditText
-                android:id="@+id/inputField"
-                android:layout_width="0dp"
-                android:layout_height="58dp"
-                android:layout_weight="1"
-                android:hint="민정이한테 말 걸어봐"
-                android:textColor="#29231F"
-                android:textColorHint="#9B918B"
-                android:textSize="16sp"
-                android:singleLine="true"
-                android:paddingStart="22dp"
-                android:paddingEnd="18dp"
-                android:backgroundTint="#FFFFFF"
-                android:elevation="3dp" />
+        menuBtn.setOnClickListener {
+            drawerLayout.openDrawer(Gravity.START)
+        }
 
-            <Button
-                android:id="@+id/sendButton"
-                android:layout_width="58dp"
-                android:layout_height="58dp"
-                android:layout_marginStart="8dp"
-                android:text="➤"
-                android:textSize="22sp"
-                android:textColor="#FFFFFF"
-                android:backgroundTint="#FF8A3D"
-                android:elevation="3dp" />
+        newChatBtn.setOnClickListener {
+            createNewSession()
+        }
 
-        </LinearLayout>
+        sessionListView.setOnItemClickListener { _, _, position, _ ->
+            val sessions = loadSessions()
+            val reversed = (0 until sessions.length()).map { sessions.getJSONObject(it) }.reversed()
+            val chosen = reversed[position]
+            switchToSession(chosen.getLong("id"))
+            drawerLayout.closeDrawer(Gravity.START)
+        }
 
-    </LinearLayout>
+        val sessions = loadSessions()
+        if (sessions.length() == 0) {
+            createNewSession()
+        } else {
+            val lastId = prefs.getLong("current_id", sessions.getJSONObject(sessions.length() - 1).getLong("id"))
+            switchToSession(lastId)
+        }
 
-    <!-- 왼쪽 대화 목록 -->
-    <LinearLayout
-        android:layout_width="290dp"
-        android:layout_height="match_parent"
-        android:layout_gravity="start"
-        android:orientation="vertical"
-        android:background="#FFFFFF"
-        android:padding="18dp">
+        sendBtn.setOnClickListener {
+            val text = input.text.toString().trim()
+            if (text.isEmpty()) return@setOnClickListener
+            appendMessage("나", text, speak = false)
+            input.setText("")
+            sendToGroq(text)
+        }
+    }
 
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="대화 목록"
-            android:textColor="#29231F"
-            android:textSize="20sp"
-            android:textStyle="bold"
-            android:paddingTop="16dp"
-            android:paddingBottom="18dp" />
+    override fun onInit(status: Int) {
+        if (status == TextToSpeech.SUCCESS) {
+            val result = tts.setLanguage(Locale.KOREAN)
+            ttsReady = result != TextToSpeech.LANG_MISSING_DATA &&
+                    result != TextToSpeech.LANG_NOT_SUPPORTED
+            tts.setPitch(0.7f)
+            tts.setSpeechRate(0.65f)
+        }
+    }
 
-        <ListView
-            android:id="@+id/sessionListView"
-            android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="1"
-            android:divider="@null"
-            android:dividerHeight="8dp" />
+    private fun loadSessions(): JSONArray {
+        val raw = prefs.getString("sessions", "[]") ?: "[]"
+        return JSONArray(raw)
+    }
 
-    </LinearLayout>
+    private fun saveSessions(sessions: JSONArray) {
+        prefs.edit().putString("sessions", sessions.toString()).apply()
+    }
 
-</androidx.drawerlayout.widget.DrawerLayout>
+    private fun createNewSession() {
+        val sessions = loadSessions()
+        val id = System.currentTimeMillis()
+
+        val sys = JSONObject()
+        sys.put("role", "system")
+        sys.put("content", systemPrompt)
+        val msgs = JSONArray()
+        msgs.put(sys)
+
+        val session = JSONObject()
+        session.put("id", id)
+        session.put("title", "새 대화")
+        session.put("messages", msgs)
+        sessions.put(session)
+        saveSessions(sessions)
+
+        currentSessionId = id
+        prefs.edit().putLong("current_id", id).apply()
+        messages = msgs
+
+        chatText.text = ""
+        appendMessage("민정", "안녕! 나 민정이야. 오늘 뭐하고 지냈어?", speak = false)
+        refreshDrawerList()
+    }
+
+    private fun switchToSession(id: Long) {
+        val sessions = loadSessions()
+        for (i in 0 until sessions.length()) {
+            val s = sessions.getJSONObject(i)
+            if (s.getLong("id") == id) {
+                currentSessionId = id
+                prefs.edit().putLong("current_id", id).apply()
+                messages = s.getJSONArray("messages")
+                renderChatFromMessages()
+                break
+            }
+        }
+        refreshDrawerList()
+    }
+
+    private fun saveCurrentSession() {
+        val sessions = loadSessions()
+        for (i in 0 until sessions.length()) {
+            val s = sessions.getJSONObject(i)
+            if (s.getLong("id") == currentSessionId) {
+                s.put("messages", messages)
+                if (s.optString("title", "새 대화") == "새 대화") {
+                    for (j in 0 until messages.length()) {
+                        val m = messages.getJSONObject(j)
+                        if (m.getString("role") == "user") {
+                            var t = m.getString("content")
+                            if (t.length > 14) t = t.substring(0, 14) + "…"
+                            s.put("title", t)
+                            break
+                        }
+                    }
+                }
+                break
+            }
+        }
+        saveSessions(sessions)
+        refreshDrawerList()
+    }
+
+    private fun refreshDrawerList() {
+        val sessions = loadSessions()
+        val titles = (0 until sessions.length())
+            .map { sessions.getJSONObject(it).optString("title", "새 대화") }
+            .reversed()
+        sessionListView.adapter = ArrayAdapter(this, android.R.layout.simple_list_item_1, titles)
+    }
+
+    private fun renderChatFromMessages() {
+        chatText.text = ""
+        for (i in 0 until messages.length()) {
+            val m = messages.getJSONObject(i)
+            val role = m.getString("role")
+            if (role == "system") continue
+            val sender = if (role == "user") "나" else "민정"
+            chatText.append("\n$sender: ${m.getString("content")}\n")
+        }
+        scrollView.post { scrollView.fullScroll(android.view.View.FOCUS_DOWN) }
+    }
+
+    private fun appendMessage(sender: String, text: String, speak: Boolean = true) {
+        chatText.append("\n$sender: $text\n")
+        scrollView.post { scrollView.fullScroll(android.view.View.FOCUS_DOWN) }
+        if (speak && sender == "민정" && ttsReady) {
+            tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, null)
+        }
+    }
+
+    private fun sendToGroq(userText: String) {
+        val userMsg = JSONObject()
+        userMsg.put("role", "user")
+        userMsg.put("content", userText)
+        messages.put(userMsg)
+        saveCurrentSession()
+
+        val body = JSONObject()
+        body.put("model", "openai/gpt-oss-120b")
+        body.put("messages", messages)
+
+        val mediaType = "application/json".toMediaType()
+        val requestBody = body.toString().toRequestBody(mediaType)
+
+        val request = Request.Builder()
+            .url("https://api.groq.com/openai/v1/chat/completions")
+            .addHeader("Authorization", "Bearer ${BuildConfig.GROQ_API_KEY}")
+            .addHeader("Content-Type", "application/json")
+            .post(requestBody)
+            .build()
+
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                client.newCall(request).execute().use { response ->
+                    val responseBody = response.body?.string()
+                    if (!response.isSuccessful || responseBody == null) {
+                        withContext(Dispatchers.Main) {
+                            appendMessage("민정", "어... 뭔가 문제가 생겼어 (${response.code})")
+                        }
+                        return@launch
+                    }
+                    val json = JSONObject(responseBody)
+                    val reply = json.getJSONArray("choices")
+                        .getJSONObject(0)
+                        .getJSONObject("message")
+                        .getString("content")
+
+                    val assistantMsg = JSONObject()
+                    assistantMsg.put("role", "assistant")
+                    assistantMsg.put("content", reply)
+                    messages.put(assistantMsg)
+
+                    withContext(Dispatchers.Main) {
+                        appendMessage("민정", reply)
+                        saveCurrentSession()
+                    }
+                }
+            } catch (e: IOException) {
+                withContext(Dispatchers.Main) {
+                    appendMessage("민정", "인터넷 연결을 확인해줘...")
+                }
+            }
+        }
+    }
+
+    override fun onDestroy() {
+        tts.stop()
+        tts.shutdown()
+        super.onDestroy()
+    }
+}
