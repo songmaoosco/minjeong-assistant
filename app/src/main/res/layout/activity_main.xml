@@ -2,26 +2,32 @@
 <androidx.drawerlayout.widget.DrawerLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/drawerLayout"
     android:layout_width="match_parent"
-    android:layout_height="match_parent">
+    android:layout_height="match_parent"
+    android:background="#F7F7F8">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:orientation="vertical"
-        android:padding="12dp">
+        android:orientation="vertical">
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:gravity="center_vertical"
-            android:paddingBottom="8dp">
+            android:padding="12dp">
 
-            <Button
+            <TextView
                 android:id="@+id/menuButton"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="☰" />
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:background="@drawable/circle_white"
+                android:gravity="center"
+                android:text="☰"
+                android:textSize="18sp"
+                android:textColor="#1C1C1E"
+                android:clickable="true"
+                android:focusable="true" />
 
             <TextView
                 android:layout_width="0dp"
@@ -30,46 +36,74 @@
                 android:gravity="center"
                 android:text="민정"
                 android:textSize="18sp"
-                android:textStyle="bold" />
+                android:textStyle="bold"
+                android:textColor="#1C1C1E" />
 
-            <Button
+            <TextView
                 android:id="@+id/newChatButton"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="+ 새 대화" />
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:background="@drawable/circle_white"
+                android:gravity="center"
+                android:text="✎"
+                android:textSize="18sp"
+                android:textColor="#1C1C1E"
+                android:clickable="true"
+                android:focusable="true" />
         </LinearLayout>
 
         <ScrollView
             android:id="@+id/scrollView"
             android:layout_width="match_parent"
             android:layout_height="0dp"
-            android:layout_weight="1">
+            android:layout_weight="1"
+            android:paddingLeft="12dp"
+            android:paddingRight="12dp"
+            android:clipToPadding="false">
 
-            <TextView
-                android:id="@+id/chatText"
+            <LinearLayout
+                android:id="@+id/chatContainer"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:textSize="16sp" />
+                android:orientation="vertical" />
         </ScrollView>
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
-            android:paddingTop="8dp">
+            android:gravity="center_vertical"
+            android:padding="12dp">
 
             <EditText
                 android:id="@+id/inputField"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:hint="민정이한테 말 걸어봐" />
+                android:minHeight="48dp"
+                android:maxLines="4"
+                android:background="@drawable/input_bg"
+                android:hint="민정이한테 말 걸어봐"
+                android:inputType="textMultiLine|textCapSentences"
+                android:paddingLeft="18dp"
+                android:paddingRight="18dp"
+                android:paddingTop="10dp"
+                android:paddingBottom="10dp"
+                android:textSize="16sp" />
 
-            <Button
+            <TextView
                 android:id="@+id/sendButton"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="전송" />
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:layout_marginLeft="8dp"
+                android:background="@drawable/circle_orange"
+                android:gravity="center"
+                android:text="↑"
+                android:textColor="#FFFFFF"
+                android:textSize="22sp"
+                android:textStyle="bold"
+                android:clickable="true"
+                android:focusable="true" />
         </LinearLayout>
 
     </LinearLayout>
