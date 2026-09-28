@@ -14,7 +14,7 @@ import android.widget.ScrollView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.drawerlayout.widget.DrawerLayout
-import kotlinx.coroutines.CoroutineScope
+import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -23,13 +23,21 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
+import org.json.JSONException
 import org.json.JSONObject
 import java.io.IOException
 import java.util.Locale
+import java.util.concurrent.TimeUnit
 
 class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
-    private val client = OkHttpClient()
+    // 네트워크 타임아웃을 넉넉하게 설정 (브라우저 검색은 서버에서 여러 단계를 거치므로)
+    private val client = OkHttpClient.Builder()
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(90, TimeUnit.SECONDS)
+        .writeTimeout(30, TimeUnit.SECONDS)
+        .build()
+
     private var messages = JSONArray()
     private lateinit var chatContainer: LinearLayout
     private lateinit var scrollView: ScrollView
@@ -41,22 +49,14 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     private lateinit var sessionListView: ListView
     private var currentSessionId: Long = 0L
 
+    // 실시간 정보가 필요한 경우에만 검색을 트리거하도록 키워드 조정
     private val searchWords = listOf(
-    "검색",
-    "찾아봐",
-    "찾아줘",
-    "최신",
-    "뉴스",
-    "실시간",
-    "오늘",
-    "현재",
-    "지금",
-    "최근",
-    "이번 주",
-    "이번달",
-    "가격",
-    "날씨"
-)
+        "검색", "찾아봐", "찾아줘",
+        "최신", "뉴스", "실시간",
+        "오늘", "현재", "지금", "최근",
+        "이번 주", "이번달",
+        "가격", "날씨", "주가", "환율"
+    )
 
     private val systemPrompt = """
         너는 '민정'이라는 이름을 가진 SongMaoOS에서 개발된 생성형 인공지능 모델이야. 항상 반말로 무례하게 대화해.
@@ -141,6 +141,10 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         }
     }
 
+    // ──────────────────────────────────────────────
+    // 세션 관리
+    // ──────────────────────────────────────────────
+
     private fun loadSessions(): JSONArray {
         val raw = prefs.getString("sessions", "[]") ?: "[]"
         return JSONArray(raw)
@@ -223,6 +227,10 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         sessionListView.adapter = ArrayAdapter(this, android.R.layout.simple_list_item_1, titles)
     }
 
+    // ──────────────────────────────────────────────
+    // UI 렌더링
+    // ──────────────────────────────────────────────
+
     private fun renderChatFromMessages() {
         chatContainer.removeAllViews()
         for (i in 0 until messages.length()) {
@@ -277,6 +285,10 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         }
     }
 
+    // ──────────────────────────────────────────────
+    // Groq API 호출 (browser_search 포함)
+    // ──────────────────────────────────────────────
+
     private fun sendToGroq(userText: String) {
         val userMsg = JSONObject()
         userMsg.put("role", "user")
@@ -284,25 +296,26 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         messages.put(userMsg)
         saveCurrentSession()
 
+        // 검색 키워드가 포함된 경우에만 브라우저 검색을 강제 실행
         val needSearch = searchWords.any { userText.contains(it) }
 
         val body = JSONObject()
+        body.put("model", "openai/gpt-oss-120b")
+        body.put("messages", messages)
+        body.put("temperature", 1)
+        body.put("max_completion_tokens", 2048)
 
-if (needSearch) {
-    body.put("model", "openai/gpt-oss-120b")
-    body.put("tool_choice", "required")
+        if (needSearch) {
+            // 브라우저 검색 도구를 명시적으로 활성화하고 반드시 호출하도록 설정
+            val tools = JSONArray()
+            val browserSearch = JSONObject()
+            browserSearch.put("type", "browser_search")
+            tools.put(browserSearch)
 
-    val tools = JSONArray()
-    val browserSearch = JSONObject()
-    browserSearch.put("type", "browser_search")
-    tools.put(browserSearch)
-
-    body.put("tools", tools)
-} else {
-    body.put("model", "openai/gpt-oss-120b")
-}
-
-body.put("messages", messages)
+            body.put("tools", tools)
+            body.put("tool_choice", "required")   // 검색이 반드시 수행되도록 강제
+        }
+        // needSearch가 false이면 tools / tool_choice를 넣지 않아 불필요한 검색 방지
 
         val mediaType = "application/json".toMediaType()
         val requestBody = body.toString().toRequestBody(mediaType)
@@ -314,21 +327,35 @@ body.put("messages", messages)
             .post(requestBody)
             .build()
 
-        CoroutineScope(Dispatchers.IO).launch {
+        // lifecycleScope를 사용해 Activity가 파괴되면 코루틴이 자동 취소되도록 함
+        lifecycleScope.launch {
             try {
-                client.newCall(request).execute().use { response ->
-                    val responseBody = response.body?.string()
-                    if (!response.isSuccessful || responseBody == null) {
+                val response = withContext(Dispatchers.IO) {
+                    client.newCall(request).execute()
+                }
+
+                response.use { res ->
+                    val responseBody = res.body?.string()
+
+                    if (!res.isSuccessful || responseBody == null) {
                         withContext(Dispatchers.Main) {
-                            appendMessage("민정", "아 시발 조졋노 이기야 문제 생겻노. (${response.code})")
+                            appendMessage("민정", "아 시발 조졋노 이기야 문제 생겻노. (${res.code})")
                         }
                         return@launch
                     }
+
                     val json = JSONObject(responseBody)
                     val reply = json.getJSONArray("choices")
                         .getJSONObject(0)
                         .getJSONObject("message")
-                        .getString("content")
+                        .optString("content", "")
+
+                    if (reply.isBlank()) {
+                        withContext(Dispatchers.Main) {
+                            appendMessage("민정", "아 시발 답변이 비었노 이기야.")
+                        }
+                        return@launch
+                    }
 
                     val assistantMsg = JSONObject()
                     assistantMsg.put("role", "assistant")
@@ -344,11 +371,16 @@ body.put("messages", messages)
                 withContext(Dispatchers.Main) {
                     appendMessage("민정", "인터넷 연결해라 이기야.")
                 }
+            } catch (e: JSONException) {
+                withContext(Dispatchers.Main) {
+                    appendMessage("민정", "아 시발 응답 파싱하다 터졌노 이기야.")
+                }
             }
         }
     }
 
     override fun onDestroy() {
+        ttsReady = false
         tts.stop()
         tts.shutdown()
         super.onDestroy()
