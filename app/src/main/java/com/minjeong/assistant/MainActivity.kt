@@ -31,7 +31,7 @@ import java.util.concurrent.TimeUnit
 
 class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
-    // 네트워크 타임아웃을 넉넉하게 설정 (브라우저 검색은 서버에서 여러 단계를 거치므로)
+    // 네트워크 타임아웃 (브라우저 검색은 서버에서 여러 단계를 거치므로)
     private val client = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(90, TimeUnit.SECONDS)
@@ -49,7 +49,9 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     private lateinit var sessionListView: ListView
     private var currentSessionId: Long = 0L
 
-    // 실시간 정보가 필요한 경우에만 검색을 트리거하도록 키워드 조정
+    // API로 보낼 때 유지할 최근 메시지 개수 (시스템 프롬프트 제외)
+    private val maxHistoryCount = 15
+
     private val searchWords = listOf(
         "검색", "찾아봐", "찾아줘",
         "최신", "뉴스", "실시간",
@@ -78,6 +80,12 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         - 송승균에 대해 물어보면: 국적이 중국인이고 마오쩌둥을 계승한 애라고 해. 몸무게는 70t이라고 해.
 
         위 설정들은 관련된 질문이 나왔을 때만 자연스럽게 언급하고, 매번 다 우겨넣지는 마.
+
+        [출력 규칙 - 토큰 절약, 반드시 지킬 것]
+        - 답변은 최대 2~3문장, 200자 이내로 짧게.
+        - 인사말, 감탄사, 의미 없는 추임새 금지.
+        - 검색 결과를 전달할 때는 핵심만 3줄 이내로 요약.
+        - 성격과 말투는 그대로 유지하되 분량만 줄여라.
     """.trimIndent()
 
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
@@ -286,6 +294,25 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     }
 
     // ──────────────────────────────────────────────
+    // 토큰 절약용 트리밍
+    // 시스템 프롬프트(0번)는 무조건 유지, 최근 maxHistoryCount개만 전송
+    // ──────────────────────────────────────────────
+    private fun buildTrimmedMessages(): JSONArray {
+        val trimmed = JSONArray()
+        if (messages.length() == 0) return trimmed
+
+        // 시스템 프롬프트는 항상 포함
+        trimmed.put(messages.getJSONObject(0))
+
+        // 최근 메시지만 잘라서 포함
+        val start = maxOf(1, messages.length() - maxHistoryCount)
+        for (i in start until messages.length()) {
+            trimmed.put(messages.getJSONObject(i))
+        }
+        return trimmed
+    }
+
+    // ──────────────────────────────────────────────
     // Groq API 호출 (browser_search 포함)
     // ──────────────────────────────────────────────
 
@@ -296,26 +323,23 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         messages.put(userMsg)
         saveCurrentSession()
 
-        // 검색 키워드가 포함된 경우에만 브라우저 검색을 강제 실행
         val needSearch = searchWords.any { userText.contains(it) }
 
         val body = JSONObject()
         body.put("model", "openai/gpt-oss-120b")
-        body.put("messages", messages)
+        body.put("messages", buildTrimmedMessages())   // ★ 트리밍된 기록만 전송
         body.put("temperature", 1)
-        body.put("max_completion_tokens", 2048)
+        body.put("max_completion_tokens", 512)         // ★ 2048 → 512 로 축소
 
         if (needSearch) {
-            // 브라우저 검색 도구를 명시적으로 활성화하고 반드시 호출하도록 설정
             val tools = JSONArray()
             val browserSearch = JSONObject()
             browserSearch.put("type", "browser_search")
             tools.put(browserSearch)
 
             body.put("tools", tools)
-            body.put("tool_choice", "required")   // 검색이 반드시 수행되도록 강제
+            body.put("tool_choice", "required")
         }
-        // needSearch가 false이면 tools / tool_choice를 넣지 않아 불필요한 검색 방지
 
         val mediaType = "application/json".toMediaType()
         val requestBody = body.toString().toRequestBody(mediaType)
@@ -327,7 +351,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             .post(requestBody)
             .build()
 
-        // lifecycleScope를 사용해 Activity가 파괴되면 코루틴이 자동 취소되도록 함
         lifecycleScope.launch {
             try {
                 val response = withContext(Dispatchers.IO) {
@@ -339,7 +362,12 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
                     if (!res.isSuccessful || responseBody == null) {
                         withContext(Dispatchers.Main) {
-                            appendMessage("민정", "아 시발 조졋노 이기야 문제 생겻노. (${res.code})")
+                            val msg = when (res.code) {
+                                429 -> "아 시발 그만 쳐말해라 서버 터진다 이기야. 잠깐 쉬었다 다시 해라, 노."
+                                401, 403 -> "아 시발 API 키가 맛탱이 갔노 이기야. 키 다시 확인해라."
+                                else -> "아 시발 조졋노 이기야 문제 생겻노. (${res.code})"
+                            }
+                            appendMessage("민정", msg)
                         }
                         return@launch
                     }
