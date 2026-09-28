@@ -272,7 +272,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         val needSearch = searchWords.any { userText.contains(it) }
 
         val body = JSONObject()
-        body.put("model", if (needSearch) "groq/compound-mini" else "openai/gpt-oss-120b")
+        body.put("model", if (needSearch) "groq/compound" else "openai/gpt-oss-120b")
         body.put("messages", messages)
 
         val mediaType = "application/json".toMediaType()
