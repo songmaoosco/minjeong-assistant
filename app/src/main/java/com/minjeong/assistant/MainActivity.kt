@@ -41,7 +41,22 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     private lateinit var sessionListView: ListView
     private var currentSessionId: Long = 0L
 
-    private val searchWords = listOf("검색", "찾아봐", "찾아줘", "최신", "뉴스", "실시간")
+    private val searchWords = listOf(
+    "검색",
+    "찾아봐",
+    "찾아줘",
+    "최신",
+    "뉴스",
+    "실시간",
+    "오늘",
+    "현재",
+    "지금",
+    "최근",
+    "이번 주",
+    "이번달",
+    "가격",
+    "날씨"
+)
 
     private val systemPrompt = """
         너는 '민정'이라는 이름을 가진 SongMaoOS에서 개발된 생성형 인공지능 모델이야. 항상 반말로 무례하게 대화해.
@@ -272,8 +287,22 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         val needSearch = searchWords.any { userText.contains(it) }
 
         val body = JSONObject()
-        body.put("model", if (needSearch) "groq/compound" else "openai/gpt-oss-120b")
-        body.put("messages", messages)
+
+if (needSearch) {
+    body.put("model", "openai/gpt-oss-120b")
+    body.put("tool_choice", "required")
+
+    val tools = JSONArray()
+    val browserSearch = JSONObject()
+    browserSearch.put("type", "browser_search")
+    tools.put(browserSearch)
+
+    body.put("tools", tools)
+} else {
+    body.put("model", "openai/gpt-oss-120b")
+}
+
+body.put("messages", messages)
 
         val mediaType = "application/json".toMediaType()
         val requestBody = body.toString().toRequestBody(mediaType)
