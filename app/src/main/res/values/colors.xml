@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 배경 -->
+    <color name="chat_bg">#FFF9F5</color>
+    <color name="header_bg">#FFFFFF</color>
+    <color name="drawer_bg">#FFFFFF</color>
+
+    <!-- 텍스트 -->
+    <color name="text_primary">#29231F</color>
+    <color name="text_secondary">#766C66</color>
+    <color name="text_hint">#A8A29E</color>
+
+    <!-- 오렌지 계열 -->
+    <color name="orange_primary">#FF8A3D</color>
+    <color name="orange_dark">#F2762E</color>
+    <color name="orange_light">#FF9B54</color>
+
+    <!-- 상태 -->
+    <color name="online_green">#4CAF50</color>
+    <color name="searching_orange">#FF8A3D</color>
+</resources>
