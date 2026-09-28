@@ -1,13 +1,17 @@
 package com.minjeong.assistant
 
+import android.animation.ObjectAnimator
 import android.content.SharedPreferences
 import android.graphics.Color
+import android.graphics.Typeface
 import android.os.Bundle
 import android.speech.tts.TextToSpeech
 import android.view.Gravity
 import android.view.View
+import android.view.animation.DecelerateInterpolator
 import android.widget.ArrayAdapter
 import android.widget.EditText
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ListView
 import android.widget.ScrollView
@@ -31,7 +35,6 @@ import java.util.concurrent.TimeUnit
 
 class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
-    // 네트워크 타임아웃 (브라우저 검색은 서버에서 여러 단계를 거치므로)
     private val client = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(90, TimeUnit.SECONDS)
@@ -47,9 +50,13 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     private lateinit var prefs: SharedPreferences
     private lateinit var drawerLayout: DrawerLayout
     private lateinit var sessionListView: ListView
+    private lateinit var statusText: TextView
     private var currentSessionId: Long = 0L
 
-    // API로 보낼 때 유지할 최근 메시지 개수 (시스템 프롬프트 제외)
+    // "웹 서핑 중..." 표시용
+    private var searchIndicatorView: View? = null
+    private var searchIndicatorAnimator: ObjectAnimator? = null
+
     private val maxHistoryCount = 15
 
     private val searchWords = listOf(
@@ -99,10 +106,11 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         sessionListView = findViewById(R.id.sessionListView)
         chatContainer = findViewById(R.id.chatContainer)
         scrollView = findViewById(R.id.scrollView)
+        statusText = findViewById(R.id.statusText)
         val input = findViewById<EditText>(R.id.inputField)
-        val sendBtn = findViewById<TextView>(R.id.sendButton)
-        val menuBtn = findViewById<TextView>(R.id.menuButton)
-        val newChatBtn = findViewById<TextView>(R.id.newChatButton)
+        val sendBtn = findViewById<ImageView>(R.id.sendButton)
+        val menuBtn = findViewById<ImageView>(R.id.menuButton)
+        val newChatBtn = findViewById<ImageView>(R.id.newChatButton)
 
         tts = TextToSpeech(this, this)
 
@@ -131,6 +139,11 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         }
 
         sendBtn.setOnClickListener {
+            // 눌림 애니메이션
+            sendBtn.animate().scaleX(0.85f).scaleY(0.85f).setDuration(80).withEndAction {
+                sendBtn.animate().scaleX(1f).scaleY(1f).setDuration(80).start()
+            }.start()
+
             val text = input.text.toString().trim()
             if (text.isEmpty()) return@setOnClickListener
             appendMessage("나", text, speak = false)
@@ -232,7 +245,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         val titles = (0 until sessions.length())
             .map { sessions.getJSONObject(it).optString("title", "새 대화") }
             .reversed()
-        sessionListView.adapter = ArrayAdapter(this, android.R.layout.simple_list_item_1, titles)
+        sessionListView.adapter = ArrayAdapter(this, R.layout.item_session, titles)
     }
 
     // ──────────────────────────────────────────────
@@ -246,11 +259,21 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             val role = m.getString("role")
             if (role == "system") continue
             val sender = if (role == "user") "나" else "민정"
-            addBubble(sender, m.getString("content"))
+            addBubble(sender, m.getString("content"), animate = false)
         }
     }
 
-    private fun addBubble(sender: String, content: String) {
+    /**
+     * 말풍선 추가
+     * @param isSearching true 면 "웹 서핑 중..." 회색 이탤릭 스타일
+     * @param animate 새 메시지 등장 애니메이션 여부
+     */
+    private fun addBubble(
+        sender: String,
+        content: String,
+        isSearching: Boolean = false,
+        animate: Boolean = true
+    ): View {
         val isUser = sender == "나"
 
         val wrapper = LinearLayout(this)
@@ -263,27 +286,57 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         wrapperParams.topMargin = dp(10)
         wrapper.layoutParams = wrapperParams
 
-        val label = TextView(this)
-        label.text = sender
-        label.textSize = 12f
-        label.setTextColor(Color.parseColor("#8A8A8E"))
-        label.setPadding(dp(6), 0, dp(6), dp(3))
-        label.gravity = if (isUser) Gravity.END else Gravity.START
+        if (!isSearching) {
+            val label = TextView(this)
+            label.text = sender
+            label.textSize = 11f
+            label.setTextColor(Color.parseColor("#A8A29E"))
+            label.setPadding(dp(8), 0, dp(8), dp(4))
+            label.gravity = if (isUser) Gravity.END else Gravity.START
+            wrapper.addView(label)
+        }
 
         val bubble = TextView(this)
         bubble.text = content
-        bubble.textSize = 16f
-        bubble.setTextColor(if (isUser) Color.WHITE else Color.parseColor("#1C1C1E"))
-        bubble.setBackgroundResource(if (isUser) R.drawable.bubble_user else R.drawable.bubble_bot)
-        bubble.setPadding(dp(14), dp(10), dp(14), dp(10))
+        bubble.textSize = 15f
+        bubble.setTextColor(
+            when {
+                isUser -> Color.WHITE
+                isSearching -> Color.parseColor("#8A8A8E")
+                else -> Color.parseColor("#29231F")
+            }
+        )
+        bubble.setBackgroundResource(
+            when {
+                isUser -> R.drawable.bubble_user
+                isSearching -> R.drawable.bubble_thinking
+                else -> R.drawable.bubble_bot
+            }
+        )
+        if (isSearching) {
+            bubble.setTypeface(null, Typeface.ITALIC)
+        }
+        bubble.setPadding(dp(16), dp(10), dp(16), dp(10))
         bubble.maxWidth = (resources.displayMetrics.widthPixels * 0.75).toInt()
-        bubble.setTextIsSelectable(true)
+        bubble.setTextIsSelectable(!isSearching)
+        bubble.elevation = dp(1).toFloat()
 
-        wrapper.addView(label)
         wrapper.addView(bubble)
         chatContainer.addView(wrapper)
 
+        if (animate) {
+            wrapper.alpha = 0f
+            wrapper.translationY = dp(16).toFloat()
+            wrapper.animate()
+                .alpha(1f)
+                .translationY(0f)
+                .setDuration(220)
+                .setInterpolator(DecelerateInterpolator())
+                .start()
+        }
+
         scrollView.post { scrollView.fullScroll(View.FOCUS_DOWN) }
+        return wrapper
     }
 
     private fun appendMessage(sender: String, text: String, speak: Boolean = true) {
@@ -294,17 +347,54 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     }
 
     // ──────────────────────────────────────────────
-    // 토큰 절약용 트리밍
-    // 시스템 프롬프트(0번)는 무조건 유지, 최근 maxHistoryCount개만 전송
+    // "웹 서핑 중..." 표시
     // ──────────────────────────────────────────────
+
+    private fun showSearchIndicator() {
+        if (searchIndicatorView != null) return
+        statusText.text = "● 검색 중..."
+        statusText.setTextColor(Color.parseColor("#FF8A3D"))
+
+        val view = addBubble("민정", "🔍 웹 서핑 중...", isSearching = true)
+        searchIndicatorView = view
+
+        // 살짝 펄스 애니메이션
+        val bubble = (view as? LinearLayout)?.getChildAt(0)
+        if (bubble != null) {
+            searchIndicatorAnimator = ObjectAnimator.ofFloat(bubble, "alpha", 0.4f, 1f).apply {
+                duration = 800
+                repeatMode = ObjectAnimator.REVERSE
+                repeatCount = ObjectAnimator.INFINITE
+                start()
+            }
+        }
+    }
+
+    private fun removeSearchIndicator() {
+        statusText.text = "● 온라인"
+        statusText.setTextColor(Color.parseColor("#4CAF50"))
+
+        searchIndicatorAnimator?.cancel()
+        searchIndicatorAnimator = null
+
+        searchIndicatorView?.let { view ->
+            view.animate().alpha(0f).setDuration(150).withEndAction {
+                chatContainer.removeView(view)
+            }.start()
+        }
+        searchIndicatorView = null
+    }
+
+    // ──────────────────────────────────────────────
+    // 토큰 절약용 트리밍
+    // ──────────────────────────────────────────────
+
     private fun buildTrimmedMessages(): JSONArray {
         val trimmed = JSONArray()
         if (messages.length() == 0) return trimmed
 
-        // 시스템 프롬프트는 항상 포함
         trimmed.put(messages.getJSONObject(0))
 
-        // 최근 메시지만 잘라서 포함
         val start = maxOf(1, messages.length() - maxHistoryCount)
         for (i in start until messages.length()) {
             trimmed.put(messages.getJSONObject(i))
@@ -313,7 +403,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     }
 
     // ──────────────────────────────────────────────
-    // Groq API 호출 (browser_search 포함)
+    // Groq API 호출
     // ──────────────────────────────────────────────
 
     private fun sendToGroq(userText: String) {
@@ -327,9 +417,9 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
         val body = JSONObject()
         body.put("model", "openai/gpt-oss-120b")
-        body.put("messages", buildTrimmedMessages())   // ★ 트리밍된 기록만 전송
+        body.put("messages", buildTrimmedMessages())
         body.put("temperature", 1)
-        body.put("max_completion_tokens", 512)         // ★ 2048 → 512 로 축소
+        body.put("max_completion_tokens", 512)
 
         if (needSearch) {
             val tools = JSONArray()
@@ -352,6 +442,8 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             .build()
 
         lifecycleScope.launch {
+            if (needSearch) showSearchIndicator()
+
             try {
                 val response = withContext(Dispatchers.IO) {
                     client.newCall(request).execute()
@@ -362,6 +454,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
                     if (!res.isSuccessful || responseBody == null) {
                         withContext(Dispatchers.Main) {
+                            if (needSearch) removeSearchIndicator()
                             val msg = when (res.code) {
                                 429 -> "아 시발 그만 쳐말해라 서버 터진다 이기야. 잠깐 쉬었다 다시 해라, 노."
                                 401, 403 -> "아 시발 API 키가 맛탱이 갔노 이기야. 키 다시 확인해라."
@@ -380,6 +473,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
                     if (reply.isBlank()) {
                         withContext(Dispatchers.Main) {
+                            if (needSearch) removeSearchIndicator()
                             appendMessage("민정", "아 시발 답변이 비었노 이기야.")
                         }
                         return@launch
@@ -391,16 +485,19 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                     messages.put(assistantMsg)
 
                     withContext(Dispatchers.Main) {
+                        if (needSearch) removeSearchIndicator()
                         appendMessage("민정", reply)
                         saveCurrentSession()
                     }
                 }
             } catch (e: IOException) {
                 withContext(Dispatchers.Main) {
+                    if (needSearch) removeSearchIndicator()
                     appendMessage("민정", "인터넷 연결해라 이기야.")
                 }
             } catch (e: JSONException) {
                 withContext(Dispatchers.Main) {
+                    if (needSearch) removeSearchIndicator()
                     appendMessage("민정", "아 시발 응답 파싱하다 터졌노 이기야.")
                 }
             }
@@ -409,6 +506,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
     override fun onDestroy() {
         ttsReady = false
+        searchIndicatorAnimator?.cancel()
         tts.stop()
         tts.shutdown()
         super.onDestroy()
