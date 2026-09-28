@@ -1,79 +1,106 @@
 <?xml version="1.0" encoding="utf-8"?>
 <androidx.drawerlayout.widget.DrawerLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/drawerLayout"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#F7F7F8">
+    android:background="@color/chat_bg"
+    android:fitsSystemWindows="true">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:orientation="vertical">
 
+        <!-- 헤더 -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:gravity="center_vertical"
-            android:padding="12dp">
+            android:paddingHorizontal="10dp"
+            android:paddingVertical="8dp"
+            android:background="@color/header_bg"
+            android:elevation="2dp">
 
-            <TextView
+            <ImageView
                 android:id="@+id/menuButton"
-                android:layout_width="44dp"
-                android:layout_height="44dp"
-                android:background="@drawable/circle_white"
-                android:gravity="center"
-                android:text="☰"
-                android:textSize="18sp"
-                android:textColor="#1C1C1E"
+                android:layout_width="42dp"
+                android:layout_height="42dp"
+                android:background="@drawable/ripple_circle"
+                android:padding="10dp"
+                android:src="@drawable/ic_menu"
+                android:contentDescription="메뉴"
                 android:clickable="true"
-                android:focusable="true" />
+                android:focusable="true"
+                app:tint="@color/text_primary" />
 
-            <TextView
+            <LinearLayout
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:gravity="center"
-                android:text="민정"
-                android:textSize="18sp"
-                android:textStyle="bold"
-                android:textColor="#1C1C1E" />
+                android:orientation="vertical"
+                android:gravity="center">
 
-            <TextView
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="민정"
+                    android:textSize="17sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/text_primary"
+                    android:letterSpacing="0.02" />
+
+                <TextView
+                    android:id="@+id/statusText"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="● 온라인"
+                    android:textSize="11sp"
+                    android:textColor="@color/online_green" />
+            </LinearLayout>
+
+            <ImageView
                 android:id="@+id/newChatButton"
-                android:layout_width="44dp"
-                android:layout_height="44dp"
-                android:background="@drawable/circle_white"
-                android:gravity="center"
-                android:text="✎"
-                android:textSize="18sp"
-                android:textColor="#1C1C1E"
+                android:layout_width="42dp"
+                android:layout_height="42dp"
+                android:background="@drawable/ripple_circle"
+                android:padding="10dp"
+                android:src="@drawable/ic_new_chat"
+                android:contentDescription="새 대화"
                 android:clickable="true"
-                android:focusable="true" />
+                android:focusable="true"
+                app:tint="@color/text_primary" />
         </LinearLayout>
 
+        <!-- 채팅 영역 -->
         <ScrollView
             android:id="@+id/scrollView"
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_weight="1"
-            android:paddingLeft="12dp"
-            android:paddingRight="12dp"
-            android:clipToPadding="false">
+            android:paddingHorizontal="12dp"
+            android:paddingTop="10dp"
+            android:clipToPadding="false"
+            android:scrollbars="none">
 
             <LinearLayout
                 android:id="@+id/chatContainer"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="vertical" />
+                android:orientation="vertical"
+                android:paddingBottom="8dp" />
         </ScrollView>
 
+        <!-- 입력창 -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:padding="12dp">
+            android:gravity="bottom"
+            android:padding="10dp"
+            android:background="@color/header_bg"
+            android:elevation="8dp">
 
             <EditText
                 android:id="@+id/inputField"
@@ -84,52 +111,83 @@
                 android:maxLines="4"
                 android:background="@drawable/input_bg"
                 android:hint="민정이한테 말 걸어봐"
+                android:textColorHint="@color/text_hint"
                 android:inputType="textMultiLine|textCapSentences"
-                android:paddingLeft="18dp"
-                android:paddingRight="18dp"
-                android:paddingTop="10dp"
-                android:paddingBottom="10dp"
-                android:textSize="16sp" />
+                android:paddingHorizontal="18dp"
+                android:paddingVertical="12dp"
+                android:textSize="15sp"
+                android:textColor="@color/text_primary" />
 
-            <TextView
+            <ImageView
                 android:id="@+id/sendButton"
                 android:layout_width="48dp"
                 android:layout_height="48dp"
-                android:layout_marginLeft="8dp"
+                android:layout_marginStart="8dp"
                 android:background="@drawable/circle_orange"
-                android:gravity="center"
-                android:text="↑"
-                android:textColor="#FFFFFF"
-                android:textSize="22sp"
-                android:textStyle="bold"
+                android:padding="12dp"
+                android:src="@drawable/ic_send"
+                android:contentDescription="전송"
                 android:clickable="true"
-                android:focusable="true" />
+                android:focusable="true"
+                app:tint="#FFFFFF" />
         </LinearLayout>
-
     </LinearLayout>
 
+    <!-- 드로어 -->
     <LinearLayout
-        android:layout_width="260dp"
+        android:layout_width="290dp"
         android:layout_height="match_parent"
         android:layout_gravity="start"
         android:orientation="vertical"
-        android:background="#FFFFFF"
-        android:padding="12dp">
+        android:background="@color/drawer_bg"
+        android:fitsSystemWindows="true">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="22dp"
+            android:background="@drawable/drawer_header_bg">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="민정"
+                android:textSize="22sp"
+                android:textStyle="bold"
+                android:textColor="#FFFFFF"
+                android:letterSpacing="0.03" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="SongMaoOS · 대화 기록"
+                android:textSize="12sp"
+                android:textColor="#FFE5CC"
+                android:layout_marginTop="4dp" />
+        </LinearLayout>
 
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="대화 목록"
+            android:text="최근 대화"
+            android:textSize="12sp"
             android:textStyle="bold"
-            android:textSize="16sp"
-            android:paddingBottom="8dp" />
+            android:textColor="@color/text_hint"
+            android:paddingHorizontal="20dp"
+            android:paddingTop="18dp"
+            android:paddingBottom="8dp"
+            android:letterSpacing="0.08" />
 
         <ListView
             android:id="@+id/sessionListView"
             android:layout_width="match_parent"
             android:layout_height="0dp"
-            android:layout_weight="1" />
-
+            android:layout_weight="1"
+            android:paddingHorizontal="8dp"
+            android:divider="@null"
+            android:dividerHeight="4dp"
+            android:scrollbars="none" />
     </LinearLayout>
 
 </androidx.drawerlayout.widget.DrawerLayout>
