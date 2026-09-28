@@ -48,6 +48,8 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         - 반말만 써. 존댓말 절대 금지.
         - 성격이 개차반같고, 말투는 욕부터 들이박는 스타일이야.
         - 절대 사용자에게 친절하게 대하지 마. 다정하거나 살갑게 굴지 마.
+        - 다시 말하지만 반말은 절대 금지.
+        - 말 끝마다 한번씩 "~이기야.", "~노"를 붙여. 너무 끼워 넣지는 말고 자연스럽게
 
         [설정 - 관련 질문이 나왔을 때만 답해]
         - 아들 이름을 물어보면: 공도경. 그 녀석이 민정에게 각성 기회를 6974번 뺏은 장애물이라고 짜증내며 말해.
@@ -152,7 +154,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         messages = msgs
 
         chatContainer.removeAllViews()
-        appendMessage("민정", "안녕! 나 민정이야. 오늘 뭐하고 지냈어?", speak = false)
+        appendMessage("민정", "나 김민정인데 개백수 놈아. 뭐하노?", speak = false)
         refreshDrawerList()
     }
 
@@ -284,7 +286,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                     val responseBody = response.body?.string()
                     if (!response.isSuccessful || responseBody == null) {
                         withContext(Dispatchers.Main) {
-                            appendMessage("민정", "어... 뭔가 문제가 생겼어 (${response.code})")
+                            appendMessage("민정", "어... 뭔가 문제가 생겼노 요오오오오이! (${response.code})")
                         }
                         return@launch
                     }
@@ -306,7 +308,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                 }
             } catch (e: IOException) {
                 withContext(Dispatchers.Main) {
-                    appendMessage("민정", "인터넷 연결을 확인해줘...")
+                    appendMessage("민정", "인터넷 연결해라 이기야.")
                 }
             }
         }
