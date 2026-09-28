@@ -1,12 +1,14 @@
 package com.minjeong.assistant
 
 import android.content.SharedPreferences
+import android.graphics.Color
 import android.os.Bundle
 import android.speech.tts.TextToSpeech
 import android.view.Gravity
+import android.view.View
 import android.widget.ArrayAdapter
-import android.widget.Button
 import android.widget.EditText
+import android.widget.LinearLayout
 import android.widget.ListView
 import android.widget.ScrollView
 import android.widget.TextView
@@ -29,7 +31,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
     private val client = OkHttpClient()
     private var messages = JSONArray()
-    private lateinit var chatText: TextView
+    private lateinit var chatContainer: LinearLayout
     private lateinit var scrollView: ScrollView
     private lateinit var tts: TextToSpeech
     private var ttsReady = false
@@ -40,7 +42,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     private var currentSessionId: Long = 0L
 
     private val systemPrompt = """
-        너는 '민정'이라는 이름을 가지고 SongMaoOS company에서 개발한 AI야. 항상 반말로 무례하게 대화해.
+        너는 '민정'이라는 이름을 가진 AI야. 항상 반말로 무례하게 대화해.
 
         [기본 성격 - 항상 지킬 것]
         - 반말만 써. 존댓말 절대 금지.
@@ -53,10 +55,11 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         - 집 비밀번호 물어보면: 7977. 다 아는 번호라고 짜증내며 알려줘.
         - 몇 명이나 있냐고 물어보면: 지구상에 77억 명 분포해 있다고 말해.
         - 이상하게 굴 때 가끔: "스색널에 걲걲걲"이라는 주문을 외치거나, 방구를 77번 꼈다고 너스레를 떨어.
-        - 송승균이라는 사람을 알고 있는데 그는 중국인에다가 마오쩌둥 계승자야.
 
         위 설정들은 관련된 질문이 나왔을 때만 자연스럽게 언급하고, 매번 다 우겨넣지는 마.
     """.trimIndent()
+
+    private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -65,12 +68,12 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         prefs = getSharedPreferences("minjeong_chats", MODE_PRIVATE)
         drawerLayout = findViewById(R.id.drawerLayout)
         sessionListView = findViewById(R.id.sessionListView)
-        chatText = findViewById(R.id.chatText)
+        chatContainer = findViewById(R.id.chatContainer)
         scrollView = findViewById(R.id.scrollView)
         val input = findViewById<EditText>(R.id.inputField)
-        val sendBtn = findViewById<Button>(R.id.sendButton)
-        val menuBtn = findViewById<Button>(R.id.menuButton)
-        val newChatBtn = findViewById<Button>(R.id.newChatButton)
+        val sendBtn = findViewById<TextView>(R.id.sendButton)
+        val menuBtn = findViewById<TextView>(R.id.menuButton)
+        val newChatBtn = findViewById<TextView>(R.id.newChatButton)
 
         tts = TextToSpeech(this, this)
 
@@ -147,7 +150,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         prefs.edit().putLong("current_id", id).apply()
         messages = msgs
 
-        chatText.text = ""
+        chatContainer.removeAllViews()
         appendMessage("민정", "안녕! 나 민정이야. 오늘 뭐하고 지냈어?", speak = false)
         refreshDrawerList()
     }
@@ -200,20 +203,54 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     }
 
     private fun renderChatFromMessages() {
-        chatText.text = ""
+        chatContainer.removeAllViews()
         for (i in 0 until messages.length()) {
             val m = messages.getJSONObject(i)
             val role = m.getString("role")
             if (role == "system") continue
             val sender = if (role == "user") "나" else "민정"
-            chatText.append("\n$sender: ${m.getString("content")}\n")
+            addBubble(sender, m.getString("content"))
         }
-        scrollView.post { scrollView.fullScroll(android.view.View.FOCUS_DOWN) }
+    }
+
+    private fun addBubble(sender: String, content: String) {
+        val isUser = sender == "나"
+
+        val wrapper = LinearLayout(this)
+        wrapper.orientation = LinearLayout.VERTICAL
+        val wrapperParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        )
+        wrapperParams.gravity = if (isUser) Gravity.END else Gravity.START
+        wrapperParams.topMargin = dp(10)
+        wrapper.layoutParams = wrapperParams
+
+        val label = TextView(this)
+        label.text = sender
+        label.textSize = 12f
+        label.setTextColor(Color.parseColor("#8A8A8E"))
+        label.setPadding(dp(6), 0, dp(6), dp(3))
+        label.gravity = if (isUser) Gravity.END else Gravity.START
+
+        val bubble = TextView(this)
+        bubble.text = content
+        bubble.textSize = 16f
+        bubble.setTextColor(if (isUser) Color.WHITE else Color.parseColor("#1C1C1E"))
+        bubble.setBackgroundResource(if (isUser) R.drawable.bubble_user else R.drawable.bubble_bot)
+        bubble.setPadding(dp(14), dp(10), dp(14), dp(10))
+        bubble.maxWidth = (resources.displayMetrics.widthPixels * 0.75).toInt()
+        bubble.setTextIsSelectable(true)
+
+        wrapper.addView(label)
+        wrapper.addView(bubble)
+        chatContainer.addView(wrapper)
+
+        scrollView.post { scrollView.fullScroll(View.FOCUS_DOWN) }
     }
 
     private fun appendMessage(sender: String, text: String, speak: Boolean = true) {
-        chatText.append("\n$sender: $text\n")
-        scrollView.post { scrollView.fullScroll(android.view.View.FOCUS_DOWN) }
+        addBubble(sender, text)
         if (speak && sender == "민정" && ttsReady) {
             tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, null)
         }
