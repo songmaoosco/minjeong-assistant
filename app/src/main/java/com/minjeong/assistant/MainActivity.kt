@@ -29,6 +29,10 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.NotificationManagerCompat
 import androidx.drawerlayout.widget.DrawerLayout
 import androidx.lifecycle.lifecycleScope
+import androidx.media3.common.MediaItem
+import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -39,6 +43,10 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
+import org.schabi.newpipe.extractor.NewPipe
+import org.schabi.newpipe.extractor.ServiceList
+import org.schabi.newpipe.extractor.stream.StreamInfo
+import org.schabi.newpipe.extractor.stream.StreamInfoItem
 import java.io.IOException
 import java.util.Locale
 import java.util.concurrent.TimeUnit
@@ -66,7 +74,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     private var searchIndicatorView: View? = null
     private var searchIndicatorAnimator: ObjectAnimator? = null
 
-    // 미디어 관련 뷰
+    // 미디어 관련 뷰 (외부 앱 감지용)
     private lateinit var backgroundImage: ImageView
     private lateinit var backgroundOverlay: View
     private lateinit var miniPlayer: LinearLayout
@@ -74,7 +82,13 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     private lateinit var miniTitle: TextView
     private lateinit var miniArtist: TextView
 
-    // 미디어 세션 감지
+    // 오로라 배경 (앱 내 재생용)
+    private lateinit var auroraView: AuroraView
+
+    // 앱 내 재생용 플레이어
+    private var exoPlayer: ExoPlayer? = null
+
+    // 외부 앱 미디어 감지
     private lateinit var mediaSessionManager: MediaSessionManager
     private lateinit var listenerComponent: ComponentName
     private var currentMediaController: MediaController? = null
@@ -93,6 +107,10 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         "오늘", "현재", "지금", "최근",
         "이번 주", "이번달",
         "가격", "날씨", "주가", "환율"
+    )
+
+    private val musicKeywords = listOf(
+        "틀어줘", "재생해줘", "노래 틀어", "음악 틀어", "들려줘"
     )
 
     private val systemPrompt = """
@@ -129,6 +147,11 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
+        // NewPipe Extractor 초기화
+        try {
+            NewPipe.init(DownloaderImpl())
+        } catch (_: Exception) {}
+
         prefs = getSharedPreferences("minjeong_chats", MODE_PRIVATE)
         drawerLayout = findViewById(R.id.drawerLayout)
         sessionListView = findViewById(R.id.sessionListView)
@@ -138,6 +161,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
         backgroundImage = findViewById(R.id.backgroundImage)
         backgroundOverlay = findViewById(R.id.backgroundOverlay)
+        auroraView = findViewById(R.id.auroraView)
         miniPlayer = findViewById(R.id.miniPlayer)
         miniArt = findViewById(R.id.miniArt)
         miniTitle = findViewById(R.id.miniTitle)
@@ -156,9 +180,17 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         menuBtn.setOnClickListener { drawerLayout.openDrawer(Gravity.START) }
         newChatBtn.setOnClickListener { createNewSession() }
 
+        // 미니플레이어 탭: 외부 앱이면 그 앱 열기, 앱 내 재생이면 재생/일시정지 토글
         miniPlayer.setOnClickListener {
-            currentMediaController?.sessionActivity?.let { pi ->
-                try { pi.send() } catch (_: Exception) {}
+            val controller = currentMediaController
+            if (controller != null) {
+                controller.sessionActivity?.let { pi ->
+                    try { pi.send() } catch (_: Exception) {}
+                }
+            } else {
+                exoPlayer?.let { p ->
+                    if (p.isPlaying) p.pause() else p.play()
+                }
             }
         }
 
@@ -194,7 +226,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     }
 
     // ──────────────────────────────────────────────
-    // 알림 접근 권한 확인 및 안내
+    // 알림 접근 권한
     // ──────────────────────────────────────────────
 
     private fun hasNotificationAccess(): Boolean {
@@ -227,7 +259,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     }
 
     // ──────────────────────────────────────────────
-    // 미디어 세션 리스너
+    // 외부 앱 미디어 세션 리스너
     // ──────────────────────────────────────────────
 
     override fun onStart() {
@@ -275,6 +307,9 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     }
 
     private fun showNowPlaying(controller: MediaController) {
+        // 앱 내 재생 중이면 외부 세션은 무시
+        if (exoPlayer != null) return
+
         currentMediaController = controller
         val metadata = controller.metadata
 
@@ -309,6 +344,9 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
     private fun hideNowPlaying() {
         currentMediaController = null
+
+        // 앱 내 재생 중이면 외부 앱이 멈춰도 미니플레이어 유지
+        if (exoPlayer != null) return
 
         if (miniPlayer.visibility == View.VISIBLE) {
             miniPlayer.animate().alpha(0f).setDuration(180).withEndAction {
@@ -568,6 +606,117 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     }
 
     // ──────────────────────────────────────────────
+    // 음악 재생 (앱 내)
+    // ──────────────────────────────────────────────
+
+    private fun extractSongQuery(text: String): String? {
+        if (!musicKeywords.any { text.contains(it) }) return null
+        var result = text
+        for (kw in musicKeywords) result = result.replace(kw, "")
+        return result.trim().ifBlank { null }
+    }
+
+    private fun playMusic(query: String) {
+        appendMessage("민정", "아 시발 $query 찾아본다 이기야.", speak = false)
+
+        lifecycleScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                try {
+                    // 1. YouTube에서 검색
+                    val searchExtractor = ServiceList.YouTube.getSearchExtractor(query)
+                    searchExtractor.fetchPage()
+                    val items = searchExtractor.initialPage.items
+                        .filterIsInstance<StreamInfoItem>()
+                    if (items.isEmpty()) return@withContext null
+
+                    val first = items.first()
+                    val videoUrl = first.url
+                    val title = first.name
+                    val uploader = first.uploaderName
+
+                    // 2. 스트리밍 URL 추출
+                    val info = StreamInfo.getInfo(ServiceList.YouTube, videoUrl)
+                    val audioStream = info.audioStreams
+                        .filter { it.url != null }
+                        .maxByOrNull { it.averageBitrate }
+
+                    if (audioStream == null) null
+                    else Triple(audioStream.url, title, uploader)
+                } catch (e: Exception) {
+                    null
+                }
+            }
+
+            if (result == null) {
+                withContext(Dispatchers.Main) {
+                    appendMessage("민정", "노래 못 찾았노 이기야.", speak = false)
+                }
+                return@launch
+            }
+
+            val (streamUrl, title, uploader) = result
+
+            withContext(Dispatchers.Main) {
+                startPlayback(streamUrl, title, uploader)
+                appendMessage("민정", "틀었다 이기야. $title", speak = false)
+            }
+        }
+    }
+
+    private fun startPlayback(url: String, title: String, artist: String) {
+        // 기존 외부 앱 배경 끄기
+        fadeOutBackground()
+
+        // ExoPlayer 준비 (User-Agent 설정)
+        if (exoPlayer == null) {
+            val dataSourceFactory = DefaultHttpDataSource.Factory()
+                .setUserAgent("Mozilla/5.0 (Linux; Android 10)")
+                .setAllowCrossProtocolRedirects(true)
+            val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory)
+            exoPlayer = ExoPlayer.Builder(this)
+                .setMediaSourceFactory(mediaSourceFactory)
+                .build()
+        }
+
+        exoPlayer?.apply {
+            setMediaItem(MediaItem.fromUri(url))
+            prepare()
+            play()
+        }
+
+        // 오로라 배경
+        auroraView.visibility = View.VISIBLE
+        auroraView.alpha = 0f
+        auroraView.animate().alpha(1f).setDuration(500).start()
+        auroraView.startAnimating()
+
+        // 미니 플레이어
+        miniTitle.text = title
+        miniArtist.text = artist.ifBlank { "YouTube" }
+        miniArt.setImageResource(R.drawable.ic_music_note)
+        if (miniPlayer.visibility != View.VISIBLE) {
+            miniPlayer.alpha = 0f
+            miniPlayer.visibility = View.VISIBLE
+            miniPlayer.animate().alpha(1f).setDuration(220).start()
+        }
+    }
+
+    private fun stopPlayback() {
+        exoPlayer?.stop()
+        exoPlayer?.release()
+        exoPlayer = null
+
+        auroraView.animate().alpha(0f).setDuration(300).withEndAction {
+            auroraView.visibility = View.GONE
+            auroraView.stopAnimating()
+        }.start()
+
+        miniPlayer.animate().alpha(0f).setDuration(180).withEndAction {
+            miniPlayer.visibility = View.GONE
+        }.start()
+    }
+
+    // ──────────────────────────────────────────────
     // Groq API
     // ──────────────────────────────────────────────
 
@@ -583,6 +732,18 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     }
 
     private fun sendToGroq(userText: String) {
+        // 음악 요청 감지
+        val songQuery = extractSongQuery(userText)
+        if (songQuery != null) {
+            val userMsg = JSONObject()
+            userMsg.put("role", "user")
+            userMsg.put("content", userText)
+            messages.put(userMsg)
+            saveCurrentSession()
+            playMusic(songQuery)
+            return
+        }
+
         val userMsg = JSONObject()
         userMsg.put("role", "user")
         userMsg.put("content", userText)
@@ -682,6 +843,9 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     override fun onDestroy() {
         ttsReady = false
         searchIndicatorAnimator?.cancel()
+        exoPlayer?.release()
+        exoPlayer = null
+        auroraView.stopAnimating()
         tts.stop()
         tts.shutdown()
         super.onDestroy()
