@@ -621,31 +621,36 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
         lifecycleScope.launch {
             val result = withContext(Dispatchers.IO) {
-                try {
-                    // 1. YouTube에서 검색
-                    val searchExtractor = ServiceList.YouTube.getSearchExtractor(query)
-                    searchExtractor.fetchPage()
-                    val items = searchExtractor.initialPage.items
-                        .filterIsInstance<StreamInfoItem>()
-                    if (items.isEmpty()) return@withContext null
+    try {
+        // 1. YouTube에서 검색
+        val searchExtractor = ServiceList.YouTube.getSearchExtractor(query)
+        searchExtractor.fetchPage()
+        val items = searchExtractor.initialPage.items
+            .filterIsInstance<StreamInfoItem>()
+        if (items.isEmpty()) return@withContext null
 
-                    val first = items.first()
-                    val videoUrl = first.url
-                    val title = first.name
-                    val uploader = first.uploaderName
+        // 2. 상위 5개 결과를 순서대로 시도 (첫 번째가 막혀도 다음 걸로)
+        for (item in items.take(5)) {
+            try {
+                val info = StreamInfo.getInfo(ServiceList.YouTube, item.url)
+                val audioStream = info.audioStreams
+                    .filter { !it.url.isNullOrBlank() }
+                    .maxByOrNull { it.averageBitrate }
 
-                    // 2. 스트리밍 URL 추출
-val info = StreamInfo.getInfo(ServiceList.YouTube, videoUrl)
-val audioStream = info.audioStreams
-    .filter { !it.url.isNullOrBlank() }
-    .maxByOrNull { it.averageBitrate }
-
-val streamUrl = audioStream?.url
-if (streamUrl.isNullOrBlank()) null
-else Triple(streamUrl, title, uploader)
-                } catch (e: Exception) {
-                    null
+                val streamUrl = audioStream?.url
+                if (!streamUrl.isNullOrBlank()) {
+                    return@withContext Triple(streamUrl, item.name, item.uploaderName)
                 }
+            } catch (e: Exception) {
+                // 이 영상은 실패 → 다음 영상 시도
+                continue
+            }
+        }
+        null
+    } catch (e: Exception) {
+        null
+    }
+}
             }
 
             if (result == null) {
