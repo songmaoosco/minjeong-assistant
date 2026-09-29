@@ -1,53 +1,18 @@
-apply plugin: 'com.android.application'
-apply plugin: 'kotlin-android'
-
-android {
-    namespace 'com.minjeong.assistant'
-    compileSdk 34
-
-    defaultConfig {
-        applicationId "com.minjeong.assistant"
-        minSdk 24
-        targetSdk 34
-        versionCode 1
-        versionName "1.0"
-        buildConfigField "String", "GROQ_API_KEY", "\"${project.findProperty('GROQ_API_KEY') ?: ""}\""
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
     }
-
-    buildFeatures {
-        buildConfig true
-    }
-
-    compileOptions {
-        sourceCompatibility JavaVersion.VERSION_17
-        targetCompatibility JavaVersion.VERSION_17
-        coreLibraryDesugaringEnabled true
-    }
-
-    kotlinOptions {
-        jvmTarget = "17"
+    dependencies {
+        classpath 'com.android.tools.build:gradle:8.1.4'
+        classpath 'org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.22'
     }
 }
 
-dependencies {
-    implementation 'androidx.core:core-ktx:1.12.0'
-    implementation 'androidx.appcompat:appcompat:1.6.1'
-    implementation 'com.google.android.material:material:1.11.0'
-    implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
-    implementation 'com.squareup.okhttp3:okhttp:4.12.0'
-    implementation 'androidx.drawerlayout:drawerlayout:1.2.0'
-    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
-
-    // Core library desugaring (NewPipeExtractor용)
-    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs_nio:2.0.4'
-
-    // Media3 ExoPlayer (오디오 재생)
-    implementation "androidx.media3:media3-exoplayer:1.6.1"
-    implementation "androidx.media3:media3-common:1.6.1"
-
-    // YouTube Music 검색 (InnerTube)
-    implementation "com.github.DivyansPathak:ytmusic-engine-kotlin:1.0.5"
-
-    // NewPipe Extractor (스트리밍 URL 추출)
-    implementation 'com.github.TeamNewPipe:NewPipeExtractor:v0.24.8'
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+        maven { url 'https://jitpack.io' }
+    }
 }
