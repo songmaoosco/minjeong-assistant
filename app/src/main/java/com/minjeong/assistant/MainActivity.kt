@@ -74,7 +74,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     private var searchIndicatorView: View? = null
     private var searchIndicatorAnimator: ObjectAnimator? = null
 
-    // 미디어 관련 뷰 (외부 앱 감지용)
     private lateinit var backgroundImage: ImageView
     private lateinit var backgroundOverlay: View
     private lateinit var miniPlayer: LinearLayout
@@ -82,13 +81,9 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     private lateinit var miniTitle: TextView
     private lateinit var miniArtist: TextView
 
-    // 오로라 배경 (앱 내 재생용)
     private lateinit var auroraView: AuroraView
-
-    // 앱 내 재생용 플레이어
     private var exoPlayer: ExoPlayer? = null
 
-    // 외부 앱 미디어 감지
     private lateinit var mediaSessionManager: MediaSessionManager
     private lateinit var listenerComponent: ComponentName
     private var currentMediaController: MediaController? = null
@@ -147,7 +142,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        // NewPipe Extractor 초기화
         try {
             NewPipe.init(DownloaderImpl())
         } catch (_: Exception) {}
@@ -180,7 +174,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         menuBtn.setOnClickListener { drawerLayout.openDrawer(Gravity.START) }
         newChatBtn.setOnClickListener { createNewSession() }
 
-        // 미니플레이어 탭: 외부 앱이면 그 앱 열기, 앱 내 재생이면 재생/일시정지 토글
         miniPlayer.setOnClickListener {
             val controller = currentMediaController
             if (controller != null) {
@@ -225,10 +218,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         checkAndRequestNotificationAccess()
     }
 
-    // ──────────────────────────────────────────────
-    // 알림 접근 권한
-    // ──────────────────────────────────────────────
-
     private fun hasNotificationAccess(): Boolean {
         val enabled = NotificationManagerCompat.getEnabledListenerPackages(this)
         return enabled.contains(packageName)
@@ -241,8 +230,8 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         AlertDialog.Builder(this)
             .setTitle("음악 연동 권한")
             .setMessage(
-                "스포티파이나 유튜브에서 음악을 틀면 민정이가 그걸 알아채고 배경에 앨범 아트를 띄워줄 수 있어요.\n\n" +
-                "이 기능을 쓰려면 '알림 접근' 권한이 필요해요. 다음 화면에서 목록 중 '민정'을 찾아서 켜주세요."
+                "스포티파이나 유튜브에서 음악을 틀면 민정이가 그걸 알아채고 배경에 앨범 아트를 띄워줄 수 있어.\n\n" +
+                "이 기능을 쓰려면 '알림 접근' 권한이 필요해. 다음 화면에서 목록 중 '민정'을 찾아서 켜줘."
             )
             .setPositiveButton("설정 열기") { _, _ ->
                 prefs.edit().putBoolean("notif_prompt_shown", true).apply()
@@ -257,10 +246,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             }
             .show()
     }
-
-    // ──────────────────────────────────────────────
-    // 외부 앱 미디어 세션 리스너
-    // ──────────────────────────────────────────────
 
     override fun onStart() {
         super.onStart()
@@ -307,7 +292,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     }
 
     private fun showNowPlaying(controller: MediaController) {
-        // 앱 내 재생 중이면 외부 세션은 무시
         if (exoPlayer != null) return
 
         currentMediaController = controller
@@ -344,8 +328,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
     private fun hideNowPlaying() {
         currentMediaController = null
-
-        // 앱 내 재생 중이면 외부 앱이 멈춰도 미니플레이어 유지
         if (exoPlayer != null) return
 
         if (miniPlayer.visibility == View.VISIBLE) {
@@ -377,10 +359,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         backgroundOverlay.animate().alpha(0f).setDuration(300).start()
     }
 
-    // ──────────────────────────────────────────────
-    // TTS
-    // ──────────────────────────────────────────────
-
     override fun onInit(status: Int) {
         if (status == TextToSpeech.SUCCESS) {
             val result = tts.setLanguage(Locale.KOREAN)
@@ -390,10 +368,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             tts.setSpeechRate(0.65f)
         }
     }
-
-    // ──────────────────────────────────────────────
-    // 세션 관리
-    // ──────────────────────────────────────────────
 
     private fun loadSessions(): JSONArray {
         val raw = prefs.getString("sessions", "[]") ?: "[]"
@@ -476,10 +450,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             .reversed()
         sessionListView.adapter = ArrayAdapter(this, R.layout.item_session, titles)
     }
-
-    // ──────────────────────────────────────────────
-    // UI 렌더링
-    // ──────────────────────────────────────────────
 
     private fun renderChatFromMessages() {
         chatContainer.removeAllViews()
@@ -567,10 +537,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         }
     }
 
-    // ──────────────────────────────────────────────
-    // 검색 인디케이터
-    // ──────────────────────────────────────────────
-
     private fun showSearchIndicator() {
         if (searchIndicatorView != null) return
         statusText.text = "● 검색 중..."
@@ -605,10 +571,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         searchIndicatorView = null
     }
 
-    // ──────────────────────────────────────────────
-    // 음악 재생 (앱 내)
-    // ──────────────────────────────────────────────
-
     private fun extractSongQuery(text: String): String? {
         if (!musicKeywords.any { text.contains(it) }) return null
         var result = text
@@ -621,36 +583,32 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
         lifecycleScope.launch {
             val result = withContext(Dispatchers.IO) {
-    try {
-        // 1. YouTube에서 검색
-        val searchExtractor = ServiceList.YouTube.getSearchExtractor(query)
-        searchExtractor.fetchPage()
-        val items = searchExtractor.initialPage.items
-            .filterIsInstance<StreamInfoItem>()
-        if (items.isEmpty()) return@withContext null
+                try {
+                    val searchExtractor = ServiceList.YouTube.getSearchExtractor(query)
+                    searchExtractor.fetchPage()
+                    val items = searchExtractor.initialPage.items
+                        .filterIsInstance<StreamInfoItem>()
+                    if (items.isEmpty()) return@withContext null
 
-        // 2. 상위 5개 결과를 순서대로 시도 (첫 번째가 막혀도 다음 걸로)
-        for (item in items.take(5)) {
-            try {
-                val info = StreamInfo.getInfo(ServiceList.YouTube, item.url)
-                val audioStream = info.audioStreams
-                    .filter { !it.url.isNullOrBlank() }
-                    .maxByOrNull { it.averageBitrate }
+                    for (item in items.take(5)) {
+                        try {
+                            val info = StreamInfo.getInfo(ServiceList.YouTube, item.url)
+                            val audioStream = info.audioStreams
+                                .filter { !it.url.isNullOrBlank() }
+                                .maxByOrNull { it.averageBitrate }
 
-                val streamUrl = audioStream?.url
-                if (!streamUrl.isNullOrBlank()) {
-                    return@withContext Triple(streamUrl, item.name, item.uploaderName)
+                            val streamUrl = audioStream?.url
+                            if (!streamUrl.isNullOrBlank()) {
+                                return@withContext Triple(streamUrl, item.name, item.uploaderName)
+                            }
+                        } catch (e: Exception) {
+                            continue
+                        }
+                    }
+                    null
+                } catch (e: Exception) {
+                    null
                 }
-            } catch (e: Exception) {
-                // 이 영상은 실패 → 다음 영상 시도
-                continue
-            }
-        }
-        null
-    } catch (e: Exception) {
-        null
-    }
-}
             }
 
             if (result == null) {
@@ -670,10 +628,8 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     }
 
     private fun startPlayback(url: String, title: String, artist: String) {
-        // 기존 외부 앱 배경 끄기
         fadeOutBackground()
 
-        // ExoPlayer 준비 (User-Agent 설정)
         if (exoPlayer == null) {
             val dataSourceFactory = DefaultHttpDataSource.Factory()
                 .setUserAgent("Mozilla/5.0 (Linux; Android 10)")
@@ -690,13 +646,11 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             play()
         }
 
-        // 오로라 배경
         auroraView.visibility = View.VISIBLE
         auroraView.alpha = 0f
         auroraView.animate().alpha(1f).setDuration(500).start()
         auroraView.startAnimating()
 
-        // 미니 플레이어
         miniTitle.text = title
         miniArtist.text = artist.ifBlank { "YouTube" }
         miniArt.setImageResource(R.drawable.ic_music_note)
@@ -722,44 +676,36 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         }.start()
     }
 
-    // ──────────────────────────────────────────────
-    // Groq API
-    // ──────────────────────────────────────────────
-
     private fun buildTrimmedMessages(): JSONArray {
-    val trimmed = JSONArray()
-    if (messages.length() == 0) return trimmed
+        val trimmed = JSONArray()
+        if (messages.length() == 0) return trimmed
 
-    // 시스템 프롬프트를 복사하면서 "현재 재생 중인 곡" 정보를 덧붙임
-    val originalSys = messages.getJSONObject(0)
-    val sysCopy = JSONObject()
-    sysCopy.put("role", "system")
+        val originalSys = messages.getJSONObject(0)
+        val sysCopy = JSONObject()
+        sysCopy.put("role", "system")
 
-    // 미니 플레이어가 보이는 경우 = 재생 중인 곡이 있음
-    val songInfo = if (miniPlayer.visibility == View.VISIBLE) {
-        val t = miniTitle.text?.toString().orEmpty().trim()
-        val a = miniArtist.text?.toString().orEmpty().trim()
-        if (t.isNotBlank() && t != "재생 중") {
-            "\n\n[현재 재생 중인 음악]\n" +
-            "- 제목: $t\n" +
-            "- 아티스트: $a\n" +
-            "사용자가 음악에 대해 물어보면 이 정보를 참고해서 대답해라."
+        val songInfo = if (miniPlayer.visibility == View.VISIBLE) {
+            val t = miniTitle.text?.toString().orEmpty().trim()
+            val a = miniArtist.text?.toString().orEmpty().trim()
+            if (t.isNotBlank() && t != "재생 중") {
+                "\n\n[현재 재생 중인 음악]\n" +
+                "- 제목: $t\n" +
+                "- 아티스트: $a\n" +
+                "사용자가 음악에 대해 물어보면 이 정보를 참고해서 대답해라."
+            } else ""
         } else ""
-    } else ""
 
-    sysCopy.put("content", originalSys.getString("content") + songInfo)
-    trimmed.put(sysCopy)
+        sysCopy.put("content", originalSys.getString("content") + songInfo)
+        trimmed.put(sysCopy)
 
-    // 최근 메시지만 잘라서 포함
-    val start = maxOf(1, messages.length() - maxHistoryCount)
-    for (i in start until messages.length()) {
-        trimmed.put(messages.getJSONObject(i))
+        val start = maxOf(1, messages.length() - maxHistoryCount)
+        for (i in start until messages.length()) {
+            trimmed.put(messages.getJSONObject(i))
+        }
+        return trimmed
     }
-    return trimmed
-}
 
     private fun sendToGroq(userText: String) {
-        // 음악 요청 감지
         val songQuery = extractSongQuery(userText)
         if (songQuery != null) {
             val userMsg = JSONObject()
