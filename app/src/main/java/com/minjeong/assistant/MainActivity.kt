@@ -1,9 +1,18 @@
 package com.minjeong.assistant
 
 import android.animation.ObjectAnimator
+import android.app.AlertDialog
+import android.content.ComponentName
+import android.content.Context
+import android.content.Intent
 import android.content.SharedPreferences
+import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Typeface
+import android.media.MediaMetadata
+import android.media.session.MediaController
+import android.media.session.MediaSessionManager
+import android.media.session.PlaybackState
 import android.os.Bundle
 import android.speech.tts.TextToSpeech
 import android.view.Gravity
@@ -17,6 +26,7 @@ import android.widget.ListView
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.NotificationManagerCompat
 import androidx.drawerlayout.widget.DrawerLayout
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
@@ -53,9 +63,27 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     private lateinit var statusText: TextView
     private var currentSessionId: Long = 0L
 
-    // "웹 서핑 중..." 표시용
     private var searchIndicatorView: View? = null
     private var searchIndicatorAnimator: ObjectAnimator? = null
+
+    // 미디어 관련 뷰
+    private lateinit var backgroundImage: ImageView
+    private lateinit var backgroundOverlay: View
+    private lateinit var miniPlayer: LinearLayout
+    private lateinit var miniArt: ImageView
+    private lateinit var miniTitle: TextView
+    private lateinit var miniArtist: TextView
+
+    // 미디어 세션 감지
+    private lateinit var mediaSessionManager: MediaSessionManager
+    private lateinit var listenerComponent: ComponentName
+    private var currentMediaController: MediaController? = null
+    private var isBackgroundVisible = false
+
+    private val sessionsChangedListener =
+        MediaSessionManager.OnActiveSessionsChangedListener { controllers ->
+            runOnUiThread { updateNowPlaying(controllers) }
+        }
 
     private val maxHistoryCount = 15
 
@@ -90,7 +118,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
         [출력 규칙 - 토큰 절약, 반드시 지킬 것]
         - 답변은 최대 2~3문장, 200자 이내로 짧게.
-        - 인사말, 감탄사, 의미 없는 추임새 금지.
+        - 인사말, 감사, 의미 없는 추임새 금지.
         - 검색 결과를 전달할 때는 핵심만 3줄 이내로 요약.
         - 성격과 말투는 그대로 유지하되 분량만 줄여라.
     """.trimIndent()
@@ -107,6 +135,14 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         chatContainer = findViewById(R.id.chatContainer)
         scrollView = findViewById(R.id.scrollView)
         statusText = findViewById(R.id.statusText)
+
+        backgroundImage = findViewById(R.id.backgroundImage)
+        backgroundOverlay = findViewById(R.id.backgroundOverlay)
+        miniPlayer = findViewById(R.id.miniPlayer)
+        miniArt = findViewById(R.id.miniArt)
+        miniTitle = findViewById(R.id.miniTitle)
+        miniArtist = findViewById(R.id.miniArtist)
+
         val input = findViewById<EditText>(R.id.inputField)
         val sendBtn = findViewById<ImageView>(R.id.sendButton)
         val menuBtn = findViewById<ImageView>(R.id.menuButton)
@@ -114,12 +150,16 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
         tts = TextToSpeech(this, this)
 
-        menuBtn.setOnClickListener {
-            drawerLayout.openDrawer(Gravity.START)
-        }
+        mediaSessionManager = getSystemService(Context.MEDIA_SESSION_SERVICE) as MediaSessionManager
+        listenerComponent = ComponentName(this, MediaNotificationListener::class.java)
 
-        newChatBtn.setOnClickListener {
-            createNewSession()
+        menuBtn.setOnClickListener { drawerLayout.openDrawer(Gravity.START) }
+        newChatBtn.setOnClickListener { createNewSession() }
+
+        miniPlayer.setOnClickListener {
+            currentMediaController?.sessionActivity?.let { pi ->
+                try { pi.send() } catch (_: Exception) {}
+            }
         }
 
         sessionListView.setOnItemClickListener { _, _, position, _ ->
@@ -139,7 +179,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         }
 
         sendBtn.setOnClickListener {
-            // 눌림 애니메이션
             sendBtn.animate().scaleX(0.85f).scaleY(0.85f).setDuration(80).withEndAction {
                 sendBtn.animate().scaleX(1f).scaleY(1f).setDuration(80).start()
             }.start()
@@ -150,7 +189,159 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             input.setText("")
             sendToGroq(text)
         }
+
+        checkAndRequestNotificationAccess()
     }
+
+    // ──────────────────────────────────────────────
+    // 알림 접근 권한 확인 및 안내
+    // ──────────────────────────────────────────────
+
+    private fun hasNotificationAccess(): Boolean {
+        val enabled = NotificationManagerCompat.getEnabledListenerPackages(this)
+        return enabled.contains(packageName)
+    }
+
+    private fun checkAndRequestNotificationAccess() {
+        if (hasNotificationAccess()) return
+        if (prefs.getBoolean("notif_prompt_shown", false)) return
+
+        AlertDialog.Builder(this)
+            .setTitle("음악 연동 권한")
+            .setMessage(
+                "스포티파이나 유튜브에서 음악을 틀면 민정이가 그걸 알아채고 배경에 앨범 아트를 띄워줄 수 있어.\n\n" +
+                "이 기능을 쓰려면 '알림 접근' 권한이 필요해. 다음 화면에서 목록 중 '민정'을 찾아서 켜줘."
+            )
+            .setPositiveButton("설정 열기") { _, _ ->
+                prefs.edit().putBoolean("notif_prompt_shown", true).apply()
+                try {
+                    startActivity(Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS"))
+                } catch (_: Exception) {
+                    startActivity(Intent(android.provider.Settings.ACTION_SETTINGS))
+                }
+            }
+            .setNegativeButton("나중에") { _, _ ->
+                prefs.edit().putBoolean("notif_prompt_shown", true).apply()
+            }
+            .show()
+    }
+
+    // ──────────────────────────────────────────────
+    // 미디어 세션 리스너
+    // ──────────────────────────────────────────────
+
+    override fun onStart() {
+        super.onStart()
+        if (hasNotificationAccess()) {
+            try {
+                mediaSessionManager.addOnActiveSessionsChangedListener(
+                    sessionsChangedListener, listenerComponent
+                )
+                val controllers = mediaSessionManager.getActiveSessions(listenerComponent)
+                updateNowPlaying(controllers)
+            } catch (_: SecurityException) {}
+        }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        if (hasNotificationAccess()) {
+            try {
+                mediaSessionManager.removeOnActiveSessionsChangedListener(sessionsChangedListener)
+            } catch (_: Exception) {}
+        }
+    }
+
+    private fun updateNowPlaying(controllers: List<MediaController>?) {
+        if (controllers.isNullOrEmpty()) {
+            hideNowPlaying()
+            return
+        }
+
+        var best: MediaController? = null
+        var bestTime = Long.MIN_VALUE
+
+        for (c in controllers) {
+            val state = c.playbackState ?: continue
+            if (state.state != PlaybackState.STATE_PLAYING) continue
+            val t = state.lastPositionUpdateTime
+            if (t > bestTime) {
+                bestTime = t
+                best = c
+            }
+        }
+
+        if (best == null) hideNowPlaying() else showNowPlaying(best)
+    }
+
+    private fun showNowPlaying(controller: MediaController) {
+        currentMediaController = controller
+        val metadata = controller.metadata
+
+        val title = metadata?.getString(MediaMetadata.METADATA_KEY_TITLE).orEmpty()
+        val artist = metadata?.getString(MediaMetadata.METADATA_KEY_ARTIST)
+            ?: metadata?.getString(MediaMetadata.METADATA_KEY_ALBUM_ARTIST)
+            ?: controller.packageName
+
+        miniTitle.text = title.ifBlank { "재생 중" }
+        miniArtist.text = artist
+
+        val art: Bitmap? = metadata?.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)
+            ?: metadata?.getBitmap(MediaMetadata.METADATA_KEY_ART)
+            ?: metadata?.getBitmap(MediaMetadata.METADATA_KEY_DISPLAY_ICON)
+
+        if (art != null) {
+            miniArt.setImageBitmap(art)
+            backgroundImage.setImageBitmap(art)
+            fadeInBackground()
+        } else {
+            miniArt.setImageResource(R.drawable.ic_music_note)
+            backgroundImage.setImageDrawable(null)
+            fadeInOverlayOnly()
+        }
+
+        if (miniPlayer.visibility != View.VISIBLE) {
+            miniPlayer.alpha = 0f
+            miniPlayer.visibility = View.VISIBLE
+            miniPlayer.animate().alpha(1f).setDuration(220).start()
+        }
+    }
+
+    private fun hideNowPlaying() {
+        currentMediaController = null
+
+        if (miniPlayer.visibility == View.VISIBLE) {
+            miniPlayer.animate().alpha(0f).setDuration(180).withEndAction {
+                miniPlayer.visibility = View.GONE
+            }.start()
+        }
+
+        fadeOutBackground()
+    }
+
+    private fun fadeInBackground() {
+        if (isBackgroundVisible) return
+        isBackgroundVisible = true
+        backgroundImage.animate().alpha(1f).setDuration(400).start()
+        backgroundOverlay.animate().alpha(1f).setDuration(400).start()
+    }
+
+    private fun fadeInOverlayOnly() {
+        if (isBackgroundVisible) return
+        isBackgroundVisible = true
+        backgroundOverlay.animate().alpha(1f).setDuration(400).start()
+    }
+
+    private fun fadeOutBackground() {
+        if (!isBackgroundVisible) return
+        isBackgroundVisible = false
+        backgroundImage.animate().alpha(0f).setDuration(300).start()
+        backgroundOverlay.animate().alpha(0f).setDuration(300).start()
+    }
+
+    // ──────────────────────────────────────────────
+    // TTS
+    // ──────────────────────────────────────────────
 
     override fun onInit(status: Int) {
         if (status == TextToSpeech.SUCCESS) {
@@ -263,11 +454,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         }
     }
 
-    /**
-     * 말풍선 추가
-     * @param isSearching true 면 "웹 서핑 중..." 회색 이탤릭 스타일
-     * @param animate 새 메시지 등장 애니메이션 여부
-     */
     private fun addBubble(
         sender: String,
         content: String,
@@ -313,9 +499,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                 else -> R.drawable.bubble_bot
             }
         )
-        if (isSearching) {
-            bubble.setTypeface(null, Typeface.ITALIC)
-        }
+        if (isSearching) bubble.setTypeface(null, Typeface.ITALIC)
         bubble.setPadding(dp(16), dp(10), dp(16), dp(10))
         bubble.maxWidth = (resources.displayMetrics.widthPixels * 0.75).toInt()
         bubble.setTextIsSelectable(!isSearching)
@@ -328,8 +512,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             wrapper.alpha = 0f
             wrapper.translationY = dp(16).toFloat()
             wrapper.animate()
-                .alpha(1f)
-                .translationY(0f)
+                .alpha(1f).translationY(0f)
                 .setDuration(220)
                 .setInterpolator(DecelerateInterpolator())
                 .start()
@@ -347,7 +530,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     }
 
     // ──────────────────────────────────────────────
-    // "웹 서핑 중..." 표시
+    // 검색 인디케이터
     // ──────────────────────────────────────────────
 
     private fun showSearchIndicator() {
@@ -358,7 +541,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         val view = addBubble("민정", "🔍 웹 서핑 중...", isSearching = true)
         searchIndicatorView = view
 
-        // 살짝 펄스 애니메이션
         val bubble = (view as? LinearLayout)?.getChildAt(0)
         if (bubble != null) {
             searchIndicatorAnimator = ObjectAnimator.ofFloat(bubble, "alpha", 0.4f, 1f).apply {
@@ -386,25 +568,19 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     }
 
     // ──────────────────────────────────────────────
-    // 토큰 절약용 트리밍
+    // Groq API
     // ──────────────────────────────────────────────
 
     private fun buildTrimmedMessages(): JSONArray {
         val trimmed = JSONArray()
         if (messages.length() == 0) return trimmed
-
         trimmed.put(messages.getJSONObject(0))
-
         val start = maxOf(1, messages.length() - maxHistoryCount)
         for (i in start until messages.length()) {
             trimmed.put(messages.getJSONObject(i))
         }
         return trimmed
     }
-
-    // ──────────────────────────────────────────────
-    // Groq API 호출
-    // ──────────────────────────────────────────────
 
     private fun sendToGroq(userText: String) {
         val userMsg = JSONObject()
@@ -426,7 +602,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             val browserSearch = JSONObject()
             browserSearch.put("type", "browser_search")
             tools.put(browserSearch)
-
             body.put("tools", tools)
             body.put("tool_choice", "required")
         }
