@@ -722,15 +722,36 @@ else Triple(streamUrl, title, uploader)
     // ──────────────────────────────────────────────
 
     private fun buildTrimmedMessages(): JSONArray {
-        val trimmed = JSONArray()
-        if (messages.length() == 0) return trimmed
-        trimmed.put(messages.getJSONObject(0))
-        val start = maxOf(1, messages.length() - maxHistoryCount)
-        for (i in start until messages.length()) {
-            trimmed.put(messages.getJSONObject(i))
-        }
-        return trimmed
+    val trimmed = JSONArray()
+    if (messages.length() == 0) return trimmed
+
+    // 시스템 프롬프트를 복사하면서 "현재 재생 중인 곡" 정보를 덧붙임
+    val originalSys = messages.getJSONObject(0)
+    val sysCopy = JSONObject()
+    sysCopy.put("role", "system")
+
+    // 미니 플레이어가 보이는 경우 = 재생 중인 곡이 있음
+    val songInfo = if (miniPlayer.visibility == View.VISIBLE) {
+        val t = miniTitle.text?.toString().orEmpty().trim()
+        val a = miniArtist.text?.toString().orEmpty().trim()
+        if (t.isNotBlank() && t != "재생 중") {
+            "\n\n[현재 재생 중인 음악]\n" +
+            "- 제목: $t\n" +
+            "- 아티스트: $a\n" +
+            "사용자가 음악에 대해 물어보면 이 정보를 참고해서 대답해라."
+        } else ""
+    } else ""
+
+    sysCopy.put("content", originalSys.getString("content") + songInfo)
+    trimmed.put(sysCopy)
+
+    // 최근 메시지만 잘라서 포함
+    val start = maxOf(1, messages.length() - maxHistoryCount)
+    for (i in start until messages.length()) {
+        trimmed.put(messages.getJSONObject(i))
     }
+    return trimmed
+}
 
     private fun sendToGroq(userText: String) {
         // 음악 요청 감지
