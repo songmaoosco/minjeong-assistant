@@ -136,7 +136,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
         [출력 규칙 - 토큰 절약, 반드시 지킬 것]
         - 답변은 최대 2~3문장, 200자 이내로 짧게.
-        - 인사말, 감사, 의미 없는 추임새 금지.
+        - 인사말, 감탄사, 의미 없는 추임새 금지.
         - 검색 결과를 전달할 때는 핵심만 3줄 이내로 요약.
         - 성격과 말투는 그대로 유지하되 분량만 줄여라.
     """.trimIndent()
@@ -241,8 +241,8 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         AlertDialog.Builder(this)
             .setTitle("음악 연동 권한")
             .setMessage(
-                "스포티파이나 유튜브에서 음악을 틀면 민정이가 그걸 알아채고 배경에 앨범 아트를 띄워줄 수 있어.\n\n" +
-                "이 기능을 쓰려면 '알림 접근' 권한이 필요해. 다음 화면에서 목록 중 '민정'을 찾아서 켜줘."
+                "스포티파이나 유튜브에서 음악을 틀면 민정이가 그걸 알아채고 배경에 앨범 아트를 띄워줄 수 있어요.\n\n" +
+                "이 기능을 쓰려면 '알림 접근' 권한이 필요해요. 다음 화면에서 목록 중 '민정'을 찾아서 켜주세요."
             )
             .setPositiveButton("설정 열기") { _, _ ->
                 prefs.edit().putBoolean("notif_prompt_shown", true).apply()
