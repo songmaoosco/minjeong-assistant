@@ -1,6 +1,5 @@
 package com.minjeong.assistant
 
-import okhttp3.OkHttpClient
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.schabi.newpipe.extractor.downloader.Downloader
 import org.schabi.newpipe.extractor.downloader.Request
@@ -9,7 +8,7 @@ import java.util.concurrent.TimeUnit
 
 class DownloaderImpl : Downloader() {
 
-    private val client = OkHttpClient.Builder()
+    private val client = okhttp3.OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .writeTimeout(30, TimeUnit.SECONDS)
@@ -21,30 +20,20 @@ class DownloaderImpl : Downloader() {
         val headers = request.headers()
         val dataToSend = request.dataToSend()
 
-        val builder = okhttp3.Request.Builder().url(url)
+        val builder = okhttp3.Request.Builder()
+            .method(httpMethod, dataToSend?.toRequestBody())
+            .url(url)
 
-        for ((key, values) in headers) {
-            for (value in values) {
-                builder.addHeader(key, value)
-            }
-        }
-
-        val method = httpMethod.uppercase()
-        if (method == "POST" || method == "PUT" || method == "PATCH") {
-            val body = dataToSend?.toRequestBody() ?: "".toRequestBody()
-            builder.method(method, body)
-        } else {
-            builder.method(method, null)
+        headers.forEach { (name, values) ->
+            values.forEach { value -> builder.addHeader(name, value) }
         }
 
         val response = client.newCall(builder.build()).execute()
-        val responseBody = response.body?.string()
-
         return Response(
             response.code,
             response.message,
             response.headers.toMultimap(),
-            responseBody,
+            response.body?.string(),
             response.request.url.toString()
         )
     }
