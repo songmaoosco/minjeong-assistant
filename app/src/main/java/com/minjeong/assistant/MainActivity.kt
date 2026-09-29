@@ -635,13 +635,14 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                     val uploader = first.uploaderName
 
                     // 2. 스트리밍 URL 추출
-                    val info = StreamInfo.getInfo(ServiceList.YouTube, videoUrl)
-                    val audioStream = info.audioStreams
-                        .filter { it.url != null }
-                        .maxByOrNull { it.averageBitrate }
+val info = StreamInfo.getInfo(ServiceList.YouTube, videoUrl)
+val audioStream = info.audioStreams
+    .filter { !it.url.isNullOrBlank() }
+    .maxByOrNull { it.averageBitrate }
 
-                    if (audioStream == null) null
-                    else Triple(audioStream.url, title, uploader)
+val streamUrl = audioStream?.url
+if (streamUrl.isNullOrBlank()) null
+else Triple(streamUrl, title, uploader)
                 } catch (e: Exception) {
                     null
                 }
