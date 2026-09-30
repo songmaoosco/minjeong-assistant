@@ -1,8 +1,5 @@
 package com.minjeong.assistant
 
-// ═══════════════════════════════════════════════════════
-// 📦 IMPORT 문 (라이브러리 불러오기)
-// ═══════════════════════════════════════════════════════
 import android.animation.ObjectAnimator
 import android.app.AlertDialog
 import android.content.ComponentName
@@ -41,6 +38,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import coil.load
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.label.ImageLabeling
 import com.google.mlkit.vision.label.defaults.ImageLabelerOptions
@@ -64,37 +62,29 @@ import java.io.IOException
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 
-// ═══════════════════════════════════════════════════════
-// 🎯 MainActivity 시작
-// ═══════════════════════════════════════════════════════
 class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
-    // [A] 네트워크 클라이언트
     private val client = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(90, TimeUnit.SECONDS)
         .writeTimeout(30, TimeUnit.SECONDS)
         .build()
 
-    // [B] 채팅 관련 변수
     private var messages = JSONArray()
     private lateinit var chatContainer: LinearLayout
     private lateinit var scrollView: ScrollView
     private lateinit var tts: TextToSpeech
     private var ttsReady = false
 
-    // [C] 세션(대화방) 관리 변수
     private lateinit var prefs: SharedPreferences
     private lateinit var drawerLayout: DrawerLayout
     private lateinit var sessionListView: ListView
     private lateinit var statusText: TextView
     private var currentSessionId: Long = 0L
 
-    // [D] 검색 인디케이터 (🔍 웹 서핑 중...)
     private var searchIndicatorView: View? = null
     private var searchIndicatorAnimator: ObjectAnimator? = null
 
-    // [E] 외부 앱 음악 감지용 뷰
     private lateinit var backgroundImage: ImageView
     private lateinit var backgroundOverlay: View
     private lateinit var miniPlayer: LinearLayout
@@ -102,28 +92,23 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     private lateinit var miniTitle: TextView
     private lateinit var miniArtist: TextView
 
-    // [F] 앱 내 재생용 (오로라 + ExoPlayer)
     private lateinit var auroraView: AuroraView
     private var exoPlayer: ExoPlayer? = null
 
-    // [G] 외부 앱 미디어 세션 감지
     private lateinit var mediaSessionManager: MediaSessionManager
     private lateinit var listenerComponent: ComponentName
     private var currentMediaController: MediaController? = null
     private var isBackgroundVisible = false
 
-    // [H] 이미지 첨부 관련
     private var attachedImage: Bitmap? = null
     private lateinit var imagePreviewContainer: View
     private lateinit var imagePreview: ImageView
 
-    // [I] 외부 앱 세션 변화 리스너
     private val sessionsChangedListener =
         MediaSessionManager.OnActiveSessionsChangedListener { controllers ->
             runOnUiThread { updateNowPlaying(controllers) }
         }
 
-    // [J] 상수 설정
     private val maxHistoryCount = 15
 
     private val searchWords = listOf(
@@ -138,7 +123,11 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         "틀어줘", "재생해줘", "노래 틀어", "음악 틀어", "들려줘"
     )
 
-    // [K] 시스템 프롬프트 (민정이 페르소나)
+    // 이미지 생성 키워드
+    private val imageGenKeywords = listOf(
+        "그려줘", "그려봐", "이미지 생성", "그림 그려", "그려 줘"
+    )
+
     private val systemPrompt = """
         너는 '민정'이라는 이름을 가진 SongMaoOS에서 개발된 생성형 인공지능 모델이야. 항상 반말로 무례하게 대화해.
 
@@ -172,7 +161,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         - 이 정보를 바탕으로 네 말투로 대답해. 이미지를 직접 본 것처럼 자연스럽게 말해.
     """.trimIndent()
 
-    // [L] 카메라 런처
     private val cameraLauncher = registerForActivityResult(
         ActivityResultContracts.TakePicturePreview()
     ) { bitmap ->
@@ -182,7 +170,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         }
     }
 
-    // [M] 갤러리 런처
     private val galleryLauncher = registerForActivityResult(
         ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
@@ -197,24 +184,16 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         }
     }
 
-    // ═══════════════════════════════════════════════════════
-    // 🔧 유틸: dp → px 변환
-    // ═══════════════════════════════════════════════════════
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
-    // ═══════════════════════════════════════════════════════
-    // 🚀 onCreate: 앱 시작
-    // ═══════════════════════════════════════════════════════
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        // NewPipe Extractor 초기화
         try {
             NewPipe.init(DownloaderImpl())
         } catch (_: Exception) {}
 
-        // WebView 초기화 (YouTube PoToken 준비)
         try {
             WebView.setWebContentsDebuggingEnabled(false)
             val webView = WebView(this)
@@ -225,7 +204,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             webView.loadUrl("about:blank")
         } catch (_: Exception) {}
 
-        // 저장소 & 뷰 초기화
         prefs = getSharedPreferences("minjeong_chats", MODE_PRIVATE)
         drawerLayout = findViewById(R.id.drawerLayout)
         sessionListView = findViewById(R.id.sessionListView)
@@ -255,20 +233,16 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         mediaSessionManager = getSystemService(Context.MEDIA_SESSION_SERVICE) as MediaSessionManager
         listenerComponent = ComponentName(this, MediaNotificationListener::class.java)
 
-        // 헤더 버튼 이벤트
         menuBtn.setOnClickListener { drawerLayout.openDrawer(Gravity.START) }
         newChatBtn.setOnClickListener { createNewSession() }
 
-        // + 버튼 → 카메라/갤러리 선택
         plusBtn.setOnClickListener { showImagePickerDialog() }
 
-        // 이미지 제거 버튼
         removeImgBtn.setOnClickListener {
             attachedImage = null
             imagePreviewContainer.visibility = View.GONE
         }
 
-        // 미니 플레이어: 짧게 탭 = 일시정지/재생
         miniPlayer.setOnClickListener {
             val controller = currentMediaController
             if (controller != null) {
@@ -282,16 +256,12 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             }
         }
 
-        // 미니 플레이어: 길게 누름 = 완전 정지
         miniPlayer.setOnLongClickListener {
             stopPlayback()
             appendMessage("민정", "아 시발 껐다 이기야.", speak = false)
             true
         }
 
-        // ═══════════════════════════════════════════════
-        // 드로어 세션 목록: 짧게 탭 → 대화방 전환
-        // ═══════════════════════════════════════════════
         sessionListView.setOnItemClickListener { _, _, position, _ ->
             val sessions = loadSessions()
             val reversed = (0 until sessions.length()).map { sessions.getJSONObject(it) }.reversed()
@@ -300,9 +270,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             drawerLayout.closeDrawer(Gravity.START)
         }
 
-        // ═══════════════════════════════════════════════
-        // 드로어 세션 목록: 길게 누름 → 삭제 다이얼로그
-        // ═══════════════════════════════════════════════
         sessionListView.setOnItemLongClickListener { _, _, position, _ ->
             val sessions = loadSessions()
             val reversed = (0 until sessions.length()).map { sessions.getJSONObject(it) }.reversed()
@@ -321,7 +288,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             true
         }
 
-        // 첫 실행 시 새 대화 생성 또는 마지막 대화 이어서
         val sessions = loadSessions()
         if (sessions.length() == 0) {
             createNewSession()
@@ -330,9 +296,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             switchToSession(lastId)
         }
 
-        // ═══════════════════════════════════════════════
-        // 전송 버튼 클릭 이벤트 (키보드 내리기 포함)
-        // ═══════════════════════════════════════════════
         sendBtn.setOnClickListener {
             sendBtn.animate().scaleX(0.85f).scaleY(0.85f).setDuration(80).withEndAction {
                 sendBtn.animate().scaleX(1f).scaleY(1f).setDuration(80).start()
@@ -344,20 +307,17 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             val hasImage = attachedImage != null
             val imgBitmap = attachedImage
 
-            // UI 초기화
             appendMessage("나", if (text.isNotEmpty()) text else "[이미지]", speak = false)
             input.setText("")
             attachedImage = null
             imagePreviewContainer.visibility = View.GONE
 
-            // 키보드 내리기
             try {
                 val imm = getSystemService(Context.INPUT_METHOD_SERVICE)
                         as android.view.inputmethod.InputMethodManager
                 imm.hideSoftInputFromWindow(input.windowToken, 0)
             } catch (_: Exception) {}
 
-            // 이미지 있으면 이미지 분석, 없으면 일반 대화
             if (hasImage && imgBitmap != null) {
                 sendImageToGroq(imgBitmap, text)
             } else {
@@ -368,9 +328,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         checkAndRequestNotificationAccess()
     }
 
-    // ═══════════════════════════════════════════════════════
-    // 📷 [1] 이미지 선택 다이얼로그
-    // ═══════════════════════════════════════════════════════
     private fun showImagePickerDialog() {
         val options = arrayOf("카메라", "갤러리")
         AlertDialog.Builder(this)
@@ -384,17 +341,11 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             .show()
     }
 
-    // ═══════════════════════════════════════════════════════
-    // 📷 [2] 이미지 미리보기
-    // ═══════════════════════════════════════════════════════
     private fun showImagePreview(bitmap: Bitmap) {
         imagePreview.setImageBitmap(bitmap)
         imagePreviewContainer.visibility = View.VISIBLE
     }
 
-    // ═══════════════════════════════════════════════════════
-    // 🧠 [3] 이미지 분석 → Groq
-    // ═══════════════════════════════════════════════════════
     private fun sendImageToGroq(bitmap: Bitmap, userText: String) {
         val userMsg = JSONObject()
         userMsg.put("role", "user")
@@ -431,13 +382,9 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         }
     }
 
-    // ═══════════════════════════════════════════════════════
-    // 🧠 [4] ML Kit 이미지 분석 (OCR + 라벨링)
-    // ═══════════════════════════════════════════════════════
     private suspend fun analyzeImage(bitmap: Bitmap): String {
         val sb = StringBuilder()
 
-        // 텍스트 인식
         val textResult = withContext(Dispatchers.Default) {
             try {
                 val recognizer = TextRecognition.getClient(KoreanTextRecognizerOptions.Builder().build())
@@ -454,7 +401,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             sb.append("추출된 텍스트: ").append(textResult).append("\n")
         }
 
-        // 이미지 라벨링
         val labels = withContext(Dispatchers.Default) {
             try {
                 val labeler = ImageLabeling.getClient(ImageLabelerOptions.DEFAULT_OPTIONS)
@@ -479,16 +425,134 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     }
 
     // ═══════════════════════════════════════════════════════
-    // 🔔 [5] 알림 접근 권한 확인
+    // 🎨 [이미지 생성] 프롬프트 추출
+    // ═══════════════════════════════════════════════════════
+    private fun extractImageGenPrompt(text: String): String? {
+        if (!imageGenKeywords.any { text.contains(it) }) return null
+        var result = text
+        for (kw in imageGenKeywords) result = result.replace(kw, "")
+        return result.trim().ifBlank { null }
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // 🎨 [이미지 생성] 실제 이미지 생성 (Pollinations.AI)
+    // ═══════════════════════════════════════════════════════
+    private fun generateImage(prompt: String) {
+        appendMessage("민정", "아 시발 $prompt 그려본다 이기야.", speak = false)
+
+        lifecycleScope.launch {
+            try {
+                // 프롬프트를 URL 인코딩
+                val encoded = java.net.URLEncoder.encode(prompt, "UTF-8")
+
+                // Pollinations.AI 이미지 생성 URL
+                // safe=false : 검열 최소화 (완전 무검열은 아님)
+                // nologo=true : 워터마크 제거 (가능한 경우)
+                // enhance=true : 프롬프트 자동 개선
+                val imageUrl = "https://image.pollinations.ai/prompt/$encoded" +
+                        "?width=512&height=512" +
+                        "&nologo=true" +
+                        "&enhance=true" +
+                        "&safe=false" +
+                        "&seed=${System.currentTimeMillis()}"
+
+                Log.d("MINJEONG_IMG_GEN", "이미지 URL: $imageUrl")
+
+                withContext(Dispatchers.Main) {
+                    addImageBubble("민정", imageUrl)
+                    appendMessage("민정", "다 그렸다 이기야. ($prompt)", speak = false)
+                }
+            } catch (e: Exception) {
+                Log.e("MINJEONG_IMG_GEN", "이미지 생성 실패", e)
+                withContext(Dispatchers.Main) {
+                    appendMessage("민정", "아 시발 그림 그리다 터졌노 이기야.", speak = false)
+                }
+            }
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // 🎨 [이미지 생성] 이미지 말풍선 UI 추가
+    // ═══════════════════════════════════════════════════════
+    private fun addImageBubble(sender: String, imageUrl: String) {
+        val isUser = sender == "나"
+
+        val wrapper = LinearLayout(this)
+        wrapper.orientation = LinearLayout.VERTICAL
+        val wrapperParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        )
+        wrapperParams.gravity = if (isUser) Gravity.END else Gravity.START
+        wrapperParams.topMargin = dp(10)
+        wrapper.layoutParams = wrapperParams
+
+        // 라벨
+        val label = TextView(this)
+        label.text = sender
+        label.textSize = 11f
+        label.setTextColor(Color.parseColor("#A8A29E"))
+        label.setPadding(dp(8), 0, dp(8), dp(4))
+        label.gravity = if (isUser) Gravity.END else Gravity.START
+        wrapper.addView(label)
+
+        // 이미지 로딩 인디케이터
+        val loadingText = TextView(this)
+        loadingText.text = "🎨 그리는 중..."
+        loadingText.textSize = 14f
+        loadingText.setTextColor(Color.parseColor("#8A8A8E"))
+        loadingText.setTypeface(null, Typeface.ITALIC)
+        loadingText.setBackgroundResource(R.drawable.bubble_image)
+        loadingText.setPadding(dp(16), dp(10), dp(16), dp(10))
+
+        // 이미지 뷰
+        val imageView = ImageView(this)
+        val imgSize = (resources.displayMetrics.widthPixels * 0.7).toInt()
+        imageView.layoutParams = LinearLayout.LayoutParams(imgSize, imgSize)
+        imageView.scaleType = ImageView.ScaleType.CENTER_CROP
+        imageView.setBackgroundResource(R.drawable.bubble_image)
+        imageView.clipToOutline = true
+        imageView.visibility = View.GONE
+
+        // Coil로 이미지 로드
+        imageView.load(imageUrl) {
+            listener(
+                onSuccess = { _, _ ->
+                    loadingText.visibility = View.GONE
+                    imageView.visibility = View.VISIBLE
+                    scrollView.post { scrollView.fullScroll(View.FOCUS_DOWN) }
+                },
+                onError = { _, _ ->
+                    loadingText.text = "아 시발 그림 못 그렸노 이기야."
+                    loadingText.setTextColor(Color.parseColor("#8A8A8E"))
+                }
+            )
+        }
+
+        wrapper.addView(loadingText)
+        wrapper.addView(imageView)
+        chatContainer.addView(wrapper)
+
+        // 등장 애니메이션
+        wrapper.alpha = 0f
+        wrapper.translationY = dp(16).toFloat()
+        wrapper.animate()
+            .alpha(1f).translationY(0f)
+            .setDuration(220)
+            .setInterpolator(DecelerateInterpolator())
+            .start()
+
+        scrollView.post { scrollView.fullScroll(View.FOCUS_DOWN) }
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // 🔔 알림 접근 권한
     // ═══════════════════════════════════════════════════════
     private fun hasNotificationAccess(): Boolean {
         val enabled = NotificationManagerCompat.getEnabledListenerPackages(this)
         return enabled.contains(packageName)
     }
 
-    // ═══════════════════════════════════════════════════════
-    // 🔔 [6] 알림 접근 권한 안내 다이얼로그
-    // ═══════════════════════════════════════════════════════
     private fun checkAndRequestNotificationAccess() {
         if (hasNotificationAccess()) return
         if (prefs.getBoolean("notif_prompt_shown", false)) return
@@ -513,9 +577,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             .show()
     }
 
-    // ═══════════════════════════════════════════════════════
-    // ▶️ [7] onStart
-    // ═══════════════════════════════════════════════════════
     override fun onStart() {
         super.onStart()
         if (hasNotificationAccess()) {
@@ -529,9 +590,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         }
     }
 
-    // ═══════════════════════════════════════════════════════
-    // ⏹️ [8] onStop
-    // ═══════════════════════════════════════════════════════
     override fun onStop() {
         super.onStop()
         if (hasNotificationAccess()) {
@@ -541,9 +599,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         }
     }
 
-    // ═══════════════════════════════════════════════════════
-    // 🎵 [9] 외부 앱 재생 상태 갱신
-    // ═══════════════════════════════════════════════════════
     private fun updateNowPlaying(controllers: List<MediaController>?) {
         if (controllers.isNullOrEmpty()) {
             hideNowPlaying()
@@ -566,9 +621,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         if (best == null) hideNowPlaying() else showNowPlaying(best)
     }
 
-    // ═══════════════════════════════════════════════════════
-    // 🎵 [10] 외부 앱 재생 시작
-    // ═══════════════════════════════════════════════════════
     private fun showNowPlaying(controller: MediaController) {
         if (exoPlayer != null) return
 
@@ -604,9 +656,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         }
     }
 
-    // ═══════════════════════════════════════════════════════
-    // 🎵 [11] 외부 앱 재생 중지
-    // ═══════════════════════════════════════════════════════
     private fun hideNowPlaying() {
         currentMediaController = null
         if (exoPlayer != null) return
@@ -620,9 +669,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         fadeOutBackground()
     }
 
-    // ═══════════════════════════════════════════════════════
-    // 🎨 [12] 배경 페이드인
-    // ═══════════════════════════════════════════════════════
     private fun fadeInBackground() {
         if (isBackgroundVisible) return
         isBackgroundVisible = true
@@ -630,18 +676,12 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         backgroundOverlay.animate().alpha(1f).setDuration(400).start()
     }
 
-    // ═══════════════════════════════════════════════════════
-    // 🎨 [13] 오버레이만 페이드인
-    // ═══════════════════════════════════════════════════════
     private fun fadeInOverlayOnly() {
         if (isBackgroundVisible) return
         isBackgroundVisible = true
         backgroundOverlay.animate().alpha(1f).setDuration(400).start()
     }
 
-    // ═══════════════════════════════════════════════════════
-    // 🎨 [14] 배경 페이드아웃
-    // ═══════════════════════════════════════════════════════
     private fun fadeOutBackground() {
         if (!isBackgroundVisible) return
         isBackgroundVisible = false
@@ -649,9 +689,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         backgroundOverlay.animate().alpha(0f).setDuration(300).start()
     }
 
-    // ═══════════════════════════════════════════════════════
-    // 🔊 [15] TTS 초기화
-    // ═══════════════════════════════════════════════════════
     override fun onInit(status: Int) {
         if (status == TextToSpeech.SUCCESS) {
             val result = tts.setLanguage(Locale.KOREAN)
@@ -662,24 +699,15 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         }
     }
 
-    // ═══════════════════════════════════════════════════════
-    // 💾 [16] 세션 로드
-    // ═══════════════════════════════════════════════════════
     private fun loadSessions(): JSONArray {
         val raw = prefs.getString("sessions", "[]") ?: "[]"
         return JSONArray(raw)
     }
 
-    // ═══════════════════════════════════════════════════════
-    // 💾 [17] 세션 저장
-    // ═══════════════════════════════════════════════════════
     private fun saveSessions(sessions: JSONArray) {
         prefs.edit().putString("sessions", sessions.toString()).apply()
     }
 
-    // ═══════════════════════════════════════════════════════
-    // 💬 [18] 새 대화방 생성
-    // ═══════════════════════════════════════════════════════
     private fun createNewSession() {
         val sessions = loadSessions()
         val id = System.currentTimeMillis()
@@ -706,9 +734,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         refreshDrawerList()
     }
 
-    // ═══════════════════════════════════════════════════════
-    // 💬 [19] 다른 대화방으로 전환
-    // ═══════════════════════════════════════════════════════
     private fun switchToSession(id: Long) {
         val sessions = loadSessions()
         for (i in 0 until sessions.length()) {
@@ -724,9 +749,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         refreshDrawerList()
     }
 
-    // ═══════════════════════════════════════════════════════
-    // 💾 [20] 현재 대화방 저장
-    // ═══════════════════════════════════════════════════════
     private fun saveCurrentSession() {
         val sessions = loadSessions()
         for (i in 0 until sessions.length()) {
@@ -751,9 +773,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         refreshDrawerList()
     }
 
-    // ═══════════════════════════════════════════════════════
-    // 📋 [21] 드로어 목록 갱신
-    // ═══════════════════════════════════════════════════════
     private fun refreshDrawerList() {
         val sessions = loadSessions()
         val titles = (0 until sessions.length())
@@ -762,9 +781,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         sessionListView.adapter = ArrayAdapter(this, R.layout.item_session, titles)
     }
 
-    // ═══════════════════════════════════════════════════════
-    // 🗑️ [21-B] 대화방 삭제 (새로 추가됨)
-    // ═══════════════════════════════════════════════════════
     private fun deleteSession(id: Long) {
         val sessions = loadSessions()
         val newSessions = JSONArray()
@@ -774,7 +790,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             val s = sessions.getJSONObject(i)
             if (s.getLong("id") == id) {
                 if (s.getLong("id") == currentSessionId) wasCurrent = true
-                // 이 세션은 건너뜀 (삭제)
             } else {
                 newSessions.put(s)
             }
@@ -796,9 +811,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         appendMessage("민정", "아 시발 지웠다 이기야.", speak = false)
     }
 
-    // ═══════════════════════════════════════════════════════
-    // 🖼️ [22] 저장된 메시지 다시 그리기
-    // ═══════════════════════════════════════════════════════
     private fun renderChatFromMessages() {
         chatContainer.removeAllViews()
         for (i in 0 until messages.length()) {
@@ -806,13 +818,18 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             val role = m.getString("role")
             if (role == "system") continue
             val sender = if (role == "user") "나" else "민정"
-            addBubble(sender, m.getString("content"), animate = false)
+            val content = m.getString("content")
+
+            // 이미지 생성 결과가 저장된 메시지면 이미지 말풍선으로 렌더링
+            if (content.startsWith("__IMAGE__:")) {
+                val url = content.removePrefix("__IMAGE__:")
+                addImageBubble(sender, url)
+            } else {
+                addBubble(sender, content, animate = false)
+            }
         }
     }
 
-    // ═══════════════════════════════════════════════════════
-    // 💬 [23] 말풍선 하나 추가
-    // ═══════════════════════════════════════════════════════
     private fun addBubble(
         sender: String,
         content: String,
@@ -881,9 +898,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         return wrapper
     }
 
-    // ═══════════════════════════════════════════════════════
-    // 💬 [24] 메시지 추가 + TTS
-    // ═══════════════════════════════════════════════════════
     private fun appendMessage(sender: String, text: String, speak: Boolean = true) {
         addBubble(sender, text)
         if (speak && sender == "민정" && ttsReady) {
@@ -891,9 +905,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         }
     }
 
-    // ═══════════════════════════════════════════════════════
-    // 🔍 [25] 검색 인디케이터 표시
-    // ═══════════════════════════════════════════════════════
     private fun showSearchIndicator() {
         if (searchIndicatorView != null) return
         statusText.text = "● 검색 중..."
@@ -913,9 +924,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         }
     }
 
-    // ═══════════════════════════════════════════════════════
-    // 🔍 [26] 검색 인디케이터 제거
-    // ═══════════════════════════════════════════════════════
     private fun removeSearchIndicator() {
         statusText.text = "● 온라인"
         statusText.setTextColor(Color.parseColor("#4CAF50"))
@@ -931,9 +939,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         searchIndicatorView = null
     }
 
-    // ═══════════════════════════════════════════════════════
-    // 🎵 [27] 곡명 추출
-    // ═══════════════════════════════════════════════════════
     private fun extractSongQuery(text: String): String? {
         if (!musicKeywords.any { text.contains(it) }) return null
         var result = text
@@ -941,9 +946,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         return result.trim().ifBlank { null }
     }
 
-    // ═══════════════════════════════════════════════════════
-    // 🎵 [28] 음악 재생
-    // ═══════════════════════════════════════════════════════
     private fun playMusic(query: String) {
         appendMessage("민정", "아 시발 $query 찾아본다 이기야.", speak = false)
 
@@ -1000,9 +1002,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         }
     }
 
-    // ═══════════════════════════════════════════════════════
-    // 🎵 [29] 실제 재생 시작
-    // ═══════════════════════════════════════════════════════
     private fun startPlayback(url: String, title: String, artist: String) {
         fadeOutBackground()
 
@@ -1037,9 +1036,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         }
     }
 
-    // ═══════════════════════════════════════════════════════
-    // 🎵 [30] 재생 완전 정지
-    // ═══════════════════════════════════════════════════════
     private fun stopPlayback() {
         exoPlayer?.stop()
         exoPlayer?.release()
@@ -1055,9 +1051,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         }.start()
     }
 
-    // ═══════════════════════════════════════════════════════
-    // 📨 [31] Groq용 메시지 배열 만들기
-    // ═══════════════════════════════════════════════════════
     private fun buildTrimmedMessages(): JSONArray {
         val trimmed = JSONArray()
         if (messages.length() == 0) return trimmed
@@ -1087,10 +1080,31 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         return trimmed
     }
 
-    // ═══════════════════════════════════════════════════════
-    // 📨 [32] 메시지 전송 (진입점)
-    // ═══════════════════════════════════════════════════════
     private fun sendToGroq(userText: String) {
+        // 이미지 생성 요청 감지
+        val imageGenPrompt = extractImageGenPrompt(userText)
+        if (imageGenPrompt != null) {
+            val userMsg = JSONObject()
+            userMsg.put("role", "user")
+            userMsg.put("content", userText)
+            messages.put(userMsg)
+
+            // 이미지 URL을 assistant 메시지로도 저장 (다음에 다시 열었을 때 복원용)
+            val imgUrl = "https://image.pollinations.ai/prompt/" +
+                    java.net.URLEncoder.encode(imageGenPrompt, "UTF-8") +
+                    "?width=512&height=512&nologo=true&enhance=true&safe=false&seed=${System.currentTimeMillis()}"
+
+            val assistantMsg = JSONObject()
+            assistantMsg.put("role", "assistant")
+            assistantMsg.put("content", "__IMAGE__:$imgUrl")
+            messages.put(assistantMsg)
+
+            saveCurrentSession()
+            generateImage(imageGenPrompt)
+            return
+        }
+
+        // 음악 요청 감지
         val songQuery = extractSongQuery(userText)
         if (songQuery != null) {
             val userMsg = JSONObject()
@@ -1111,9 +1125,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         sendToGroqInternal(userText, displayText = userText)
     }
 
-    // ═══════════════════════════════════════════════════════
-    // 📨 [33] 실제 Groq API 호출
-    // ═══════════════════════════════════════════════════════
     private fun sendToGroqInternal(apiText: String, displayText: String) {
         val needSearch = searchWords.any { apiText.contains(it) }
 
@@ -1205,9 +1216,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         }
     }
 
-    // ═══════════════════════════════════════════════════════
-    // 📨 [34] 이미지 분석 결과 주입
-    // ═══════════════════════════════════════════════════════
     private fun buildTrimmedMessagesForImage(apiText: String): JSONArray {
         val trimmed = JSONArray()
         if (messages.length() == 0) return trimmed
@@ -1241,9 +1249,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         return trimmed
     }
 
-    // ═══════════════════════════════════════════════════════
-    // 🧹 [35] onDestroy: 앱 종료 시 정리
-    // ═══════════════════════════════════════════════════════
     override fun onDestroy() {
         ttsReady = false
         searchIndicatorAnimator?.cancel()
