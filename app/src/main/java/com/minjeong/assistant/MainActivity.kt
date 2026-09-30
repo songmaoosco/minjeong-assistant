@@ -13,7 +13,9 @@ import android.media.MediaMetadata
 import android.media.session.MediaController
 import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
+import android.net.Uri
 import android.os.Bundle
+import android.provider.MediaStore
 import android.speech.tts.TextToSpeech
 import android.util.Log
 import android.view.Gravity
@@ -27,6 +29,7 @@ import android.widget.LinearLayout
 import android.widget.ListView
 import android.widget.ScrollView
 import android.widget.TextView
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.NotificationManagerCompat
 import androidx.drawerlayout.widget.DrawerLayout
@@ -35,6 +38,11 @@ import androidx.media3.common.MediaItem
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.label.ImageLabeling
+import com.google.mlkit.vision.label.defaults.ImageLabelerOptions
+import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.korean.KoreanTextRecognizerOptions
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -91,6 +99,11 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     private var currentMediaController: MediaController? = null
     private var isBackgroundVisible = false
 
+    // 이미지 관련
+    private var attachedImage: Bitmap? = null
+    private lateinit var imagePreviewContainer: View
+    private lateinit var imagePreview: ImageView
+
     private val sessionsChangedListener =
         MediaSessionManager.OnActiveSessionsChangedListener { controllers ->
             runOnUiThread { updateNowPlaying(controllers) }
@@ -136,7 +149,37 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         - 인사말, 감탄사, 의미 없는 추임새 금지.
         - 검색 결과를 전달할 때는 핵심만 3줄 이내로 요약.
         - 성격과 말투는 그대로 유지하되 분량만 줄여라.
+
+        [이미지 분석 결과 처리]
+        - 사용자가 이미지를 보내면, "[이미지 분석 결과]" 라는 텍스트가 함께 전달돼.
+        - 그 안에는 이미지에서 추출한 텍스트(OCR)와 라벨(객체 분류)이 들어있어.
+        - 이 정보를 바탕으로 네 말투로 대답해. 이미지를 직접 본 것처럼 자연스럽게 말해.
     """.trimIndent()
+
+    // 카메라 런처
+    private val cameraLauncher = registerForActivityResult(
+        ActivityResultContracts.TakePicturePreview()
+    ) { bitmap ->
+        if (bitmap != null) {
+            attachedImage = bitmap
+            showImagePreview(bitmap)
+        }
+    }
+
+    // 갤러리 런처
+    private val galleryLauncher = registerForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            try {
+                val bitmap = MediaStore.Images.Media.getBitmap(contentResolver, uri)
+                attachedImage = bitmap
+                showImagePreview(bitmap)
+            } catch (e: Exception) {
+                Log.e("MINJEONG_IMG", "이미지 로드 실패", e)
+            }
+        }
+    }
 
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
@@ -172,11 +215,15 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         miniArt = findViewById(R.id.miniArt)
         miniTitle = findViewById(R.id.miniTitle)
         miniArtist = findViewById(R.id.miniArtist)
+        imagePreviewContainer = findViewById(R.id.imagePreviewContainer)
+        imagePreview = findViewById(R.id.imagePreview)
 
         val input = findViewById<EditText>(R.id.inputField)
         val sendBtn = findViewById<ImageView>(R.id.sendButton)
         val menuBtn = findViewById<ImageView>(R.id.menuButton)
         val newChatBtn = findViewById<ImageView>(R.id.newChatButton)
+        val plusBtn = findViewById<ImageView>(R.id.plusButton)
+        val removeImgBtn = findViewById<ImageView>(R.id.removeImageButton)
 
         tts = TextToSpeech(this, this)
 
@@ -185,6 +232,15 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
         menuBtn.setOnClickListener { drawerLayout.openDrawer(Gravity.START) }
         newChatBtn.setOnClickListener { createNewSession() }
+
+        // + 버튼 → 카메라/갤러리 선택
+        plusBtn.setOnClickListener { showImagePickerDialog() }
+
+        // 이미지 제거 버튼
+        removeImgBtn.setOnClickListener {
+            attachedImage = null
+            imagePreviewContainer.visibility = View.GONE
+        }
 
         miniPlayer.setOnClickListener {
             val controller = currentMediaController
@@ -227,14 +283,144 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             }.start()
 
             val text = input.text.toString().trim()
-            if (text.isEmpty()) return@setOnClickListener
-            appendMessage("나", text, speak = false)
+            if (text.isEmpty() && attachedImage == null) return@setOnClickListener
+
+            val hasImage = attachedImage != null
+            val imgBitmap = attachedImage
+
+            // UI 초기화
+            appendMessage("나", if (text.isNotEmpty()) text else "[이미지]", speak = false)
             input.setText("")
-            sendToGroq(text)
+            attachedImage = null
+            imagePreviewContainer.visibility = View.GONE
+
+            if (hasImage && imgBitmap != null) {
+                sendImageToGroq(imgBitmap, text)
+            } else {
+                sendToGroq(text)
+            }
         }
 
         checkAndRequestNotificationAccess()
     }
+
+    // ──────────────────────────────────────────────
+    // 이미지 선택 다이얼로그
+    // ──────────────────────────────────────────────
+
+    private fun showImagePickerDialog() {
+        val options = arrayOf("카메라", "갤러리")
+        AlertDialog.Builder(this)
+            .setTitle("이미지 가져오기")
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> cameraLauncher.launch(null)
+                    1 -> galleryLauncher.launch("image/*")
+                }
+            }
+            .show()
+    }
+
+    private fun showImagePreview(bitmap: Bitmap) {
+        imagePreview.setImageBitmap(bitmap)
+        imagePreviewContainer.visibility = View.VISIBLE
+    }
+
+    // ──────────────────────────────────────────────
+    // ML Kit 이미지 분석 → Groq 텍스트 전송
+    // ──────────────────────────────────────────────
+
+    private fun sendImageToGroq(bitmap: Bitmap, userText: String) {
+        // 사용자 메시지 저장
+        val userMsg = JSONObject()
+        userMsg.put("role", "user")
+        userMsg.put("content", if (userText.isNotEmpty()) userText else "[이미지]")
+        messages.put(userMsg)
+        saveCurrentSession()
+
+        appendMessage("민정", "아 시발 이미지 분석한다 이기야...", speak = false)
+
+        lifecycleScope.launch {
+            val analysisResult = withContext(Dispatchers.IO) {
+                try {
+                    analyzeImage(bitmap)
+                } catch (e: Exception) {
+                    Log.e("MINJEONG_IMG", "이미지 분석 실패", e)
+                    ""
+                }
+            }
+
+            if (analysisResult.isBlank()) {
+                withContext(Dispatchers.Main) {
+                    appendMessage("민정", "아 시발 이미지 분석 못 했노 이기야.", speak = false)
+                }
+                return@launch
+            }
+
+            // 이미지 분석 결과를 시스템 프롬프트에 추가해서 Groq에 전달
+            val prompt = if (userText.isNotEmpty()) {
+                "$userText\n\n[이미지 분석 결과]\n$analysisResult"
+            } else {
+                "[이미지 분석 결과]\n$analysisResult"
+            }
+
+            sendToGroqInternal(prompt, displayText = if (userText.isNotEmpty()) userText else "[이미지]")
+        }
+    }
+
+    /**
+     * ML Kit로 이미지 분석:
+     * 1. OCR: 이미지 속 텍스트 추출
+     * 2. Image Labeling: 객체 라벨 추출
+     */
+    private suspend fun analyzeImage(bitmap: Bitmap): String {
+        val sb = StringBuilder()
+
+        // 1. 텍스트 인식 (한국어)
+        val textResult = withContext(Dispatchers.Default) {
+            try {
+                val recognizer = TextRecognition.getClient(KoreanTextRecognizerOptions.Builder().build())
+                val image = InputImage.fromBitmap(bitmap, 0)
+                val result = com.google.android.gms.tasks.Tasks.await(recognizer.process(image))
+                result.text
+            } catch (e: Exception) {
+                Log.e("MINJEONG_IMG", "OCR 실패", e)
+                ""
+            }
+        }
+
+        if (textResult.isNotBlank()) {
+            sb.append("추출된 텍스트: ").append(textResult).append("\n")
+        }
+
+        // 2. 이미지 라벨링
+        val labels = withContext(Dispatchers.Default) {
+            try {
+                val labeler = ImageLabeling.getClient(ImageLabelerOptions.DEFAULT_OPTIONS)
+                val image = InputImage.fromBitmap(bitmap, 0)
+                val result = com.google.android.gms.tasks.Tasks.await(labeler.process(image))
+                result.take(10).joinToString(", ") { "${it.text}(${(it.confidence * 100).toInt()}%)" }
+            } catch (e: Exception) {
+                Log.e("MINJEONG_IMG", "라벨링 실패", e)
+                ""
+            }
+        }
+
+        if (labels.isNotBlank()) {
+            sb.append("이미지 라벨: ").append(labels).append("\n")
+        }
+
+        if (sb.isBlank()) {
+            sb.append("이미지에서 특별한 내용을 찾지 못했어.")
+        }
+
+        Log.d("MINJEONG_IMG", "분석 결과: $sb")
+        return sb.toString()
+    }
+
+    // ──────────────────────────────────────────────
+    // 알림 접근 권한
+    // ──────────────────────────────────────────────
 
     private fun hasNotificationAccess(): Boolean {
         val enabled = NotificationManagerCompat.getEnabledListenerPackages(this)
@@ -264,6 +450,10 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             }
             .show()
     }
+
+    // ──────────────────────────────────────────────
+    // 외부 앱 미디어 세션 리스너
+    // ──────────────────────────────────────────────
 
     override fun onStart() {
         super.onStart()
@@ -387,6 +577,10 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         }
     }
 
+    // ──────────────────────────────────────────────
+    // 세션 관리
+    // ──────────────────────────────────────────────
+
     private fun loadSessions(): JSONArray {
         val raw = prefs.getString("sessions", "[]") ?: "[]"
         return JSONArray(raw)
@@ -468,6 +662,10 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             .reversed()
         sessionListView.adapter = ArrayAdapter(this, R.layout.item_session, titles)
     }
+
+    // ──────────────────────────────────────────────
+    // UI 렌더링
+    // ──────────────────────────────────────────────
 
     private fun renderChatFromMessages() {
         chatContainer.removeAllViews()
@@ -555,6 +753,10 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         }
     }
 
+    // ──────────────────────────────────────────────
+    // 검색 인디케이터
+    // ──────────────────────────────────────────────
+
     private fun showSearchIndicator() {
         if (searchIndicatorView != null) return
         statusText.text = "● 검색 중..."
@@ -588,6 +790,10 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         }
         searchIndicatorView = null
     }
+
+    // ──────────────────────────────────────────────
+    // 음악 재생
+    // ──────────────────────────────────────────────
 
     private fun extractSongQuery(text: String): String? {
         if (!musicKeywords.any { text.contains(it) }) return null
@@ -701,6 +907,10 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         }.start()
     }
 
+    // ──────────────────────────────────────────────
+    // Groq API
+    // ──────────────────────────────────────────────
+
     private fun buildTrimmedMessages(): JSONArray {
         val trimmed = JSONArray()
         if (messages.length() == 0) return trimmed
@@ -731,6 +941,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     }
 
     private fun sendToGroq(userText: String) {
+        // 음악 요청 감지
         val songQuery = extractSongQuery(userText)
         if (songQuery != null) {
             val userMsg = JSONObject()
@@ -748,11 +959,20 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         messages.put(userMsg)
         saveCurrentSession()
 
-        val needSearch = searchWords.any { userText.contains(it) }
+        sendToGroqInternal(userText, displayText = userText)
+    }
+
+    /**
+     * 이미지 분석 결과를 포함한 Groq 호출 (내부용)
+     * @param apiText Groq에 실제로 보낼 텍스트 (이미지 분석 결과 포함)
+     * @param displayText 채팅창에 표시할 텍스트
+     */
+    private fun sendToGroqInternal(apiText: String, displayText: String) {
+        val needSearch = searchWords.any { apiText.contains(it) }
 
         val body = JSONObject()
         body.put("model", "openai/gpt-oss-120b")
-        body.put("messages", buildTrimmedMessages())
+        body.put("messages", buildTrimmedMessagesForImage(apiText))
         body.put("temperature", 1)
         body.put("max_completion_tokens", 512)
 
@@ -836,6 +1056,43 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                 }
             }
         }
+    }
+
+    /**
+     * 이미지 분석 결과를 포함한 메시지 배열 생성
+     */
+    private fun buildTrimmedMessagesForImage(apiText: String): JSONArray {
+        val trimmed = JSONArray()
+        if (messages.length() == 0) return trimmed
+
+        val originalSys = messages.getJSONObject(0)
+        val sysCopy = JSONObject()
+        sysCopy.put("role", "system")
+
+        val songInfo = if (miniPlayer.visibility == View.VISIBLE) {
+            val t = miniTitle.text?.toString().orEmpty().trim()
+            val a = miniArtist.text?.toString().orEmpty().trim()
+            if (t.isNotBlank() && t != "재생 중") {
+                "\n\n[현재 재생 중인 음악]\n" +
+                "- 제목: $t\n" +
+                "- 아티스트: $a\n" +
+                "사용자가 음악에 대해 물어보면 이 정보를 참고해서 대답해라."
+            } else ""
+        } else ""
+
+        sysCopy.put("content", originalSys.getString("content") + songInfo)
+        trimmed.put(sysCopy)
+
+        val start = maxOf(1, messages.length() - maxHistoryCount)
+        for (i in start until messages.length()) {
+            val msg = JSONObject(messages.getJSONObject(i).toString())
+            // 마지막 user 메시지면 이미지 분석 결과로 대체
+            if (i == messages.length() - 1 && msg.getString("role") == "user") {
+                msg.put("content", apiText)
+            }
+            trimmed.put(msg)
+        }
+        return trimmed
     }
 
     override fun onDestroy() {
