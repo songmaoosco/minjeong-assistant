@@ -115,6 +115,37 @@
                     android:paddingBottom="8dp" />
             </ScrollView>
 
+            <!-- 이미지 썸네일 미리보기 -->
+            <FrameLayout
+                android:id="@+id/imagePreviewContainer"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingHorizontal="12dp"
+                android:paddingTop="6dp"
+                android:visibility="gone">
+
+                <ImageView
+                    android:id="@+id/imagePreview"
+                    android:layout_width="80dp"
+                    android:layout_height="80dp"
+                    android:scaleType="centerCrop"
+                    android:background="@drawable/bubble_bot"
+                    android:contentDescription="@null" />
+
+                <ImageView
+                    android:id="@+id/removeImageButton"
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
+                    android:layout_marginStart="68dp"
+                    android:background="@drawable/circle_orange"
+                    android:padding="4dp"
+                    android:src="@drawable/ic_menu"
+                    android:contentDescription="이미지 제거"
+                    app:tint="#FFFFFF"
+                    android:clickable="true"
+                    android:focusable="true" />
+            </FrameLayout>
+
             <LinearLayout
                 android:id="@+id/miniPlayer"
                 android:layout_width="match_parent"
@@ -185,11 +216,24 @@
                 android:background="@color/header_bg"
                 android:elevation="8dp">
 
+                <ImageView
+                    android:id="@+id/plusButton"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:background="@drawable/ripple_circle"
+                    android:padding="12dp"
+                    android:src="@drawable/ic_plus"
+                    android:contentDescription="파일 추가"
+                    android:clickable="true"
+                    android:focusable="true"
+                    app:tint="@color/text_primary" />
+
                 <EditText
                     android:id="@+id/inputField"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
+                    android:layout_marginStart="6dp"
                     android:minHeight="48dp"
                     android:maxLines="4"
                     android:background="@drawable/input_bg"
