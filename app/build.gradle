@@ -12,6 +12,7 @@ android {
         versionCode 1
         versionName "1.0"
         buildConfigField "String", "GROQ_API_KEY", "\"${project.findProperty('GROQ_API_KEY') ?: ""}\""
+        buildConfigField "String", "HF_API_KEY", "\"${project.findProperty('HF_API_KEY') ?: ""}\""
     }
 
     buildFeatures {
@@ -53,7 +54,4 @@ dependencies {
 
     implementation 'com.google.mlkit:text-recognition-korean:16.0.1'
     implementation 'com.google.mlkit:image-labeling:17.0.9'
-
-    // 이미지 로딩 (Pollinations 이미지 표시용)
-    implementation("io.coil-kt:coil:2.7.0")
 }
