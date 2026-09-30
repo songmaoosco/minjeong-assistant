@@ -52,5 +52,5 @@ dependencies {
     implementation "androidx.media3:media3-datasource:1.4.1"
 
     // NewPipe Extractor (YouTube 검색 + 스트리밍 URL 추출)
-    implementation 'com.github.TeamNewPipe:NewPipeExtractor:v0.24.5'
+    implementation 'com.github.TeamNewPipe:NewPipeExtractor:v0.26.5'
 }
