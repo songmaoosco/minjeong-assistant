@@ -51,8 +51,9 @@ dependencies {
 
     implementation 'com.github.TeamNewPipe:NewPipeExtractor:v0.26.5'
 
-    // ML Kit - 텍스트 인식 (한국어)
     implementation 'com.google.mlkit:text-recognition-korean:16.0.1'
-    // ML Kit - 이미지 라벨링
     implementation 'com.google.mlkit:image-labeling:17.0.9'
+
+    // 이미지 로딩 (Pollinations 이미지 표시용)
+    implementation("io.coil-kt:coil:2.7.0")
 }
