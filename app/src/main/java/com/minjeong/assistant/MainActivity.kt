@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.Typeface
 import android.media.MediaMetadata
@@ -38,7 +39,6 @@ import androidx.media3.common.MediaItem
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
-import coil.load
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.label.ImageLabeling
 import com.google.mlkit.vision.label.defaults.ImageLabelerOptions
@@ -123,9 +123,10 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         "틀어줘", "재생해줘", "노래 틀어", "음악 틀어", "들려줘"
     )
 
-    // 이미지 생성 키워드
+    // ⭐ 이미지 생성 키워드 (해줘, 해봐 추가)
     private val imageGenKeywords = listOf(
-        "그려줘", "그려봐", "이미지 생성", "그림 그려", "그려 줘"
+        "그려줘", "그려봐", "이미지 생성", "그림 그려", "그려 줘",
+        "해줘", "해봐", "만들어줘"
     )
 
     private val systemPrompt = """
@@ -425,111 +426,149 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     }
 
     // ═══════════════════════════════════════════════════════
-    // 🎨 [이미지 생성] 프롬프트 추출
+    // 🎨 이미지 생성 (Hugging Face FLUX.1-schnell)
     // ═══════════════════════════════════════════════════════
+
     private fun extractImageGenPrompt(text: String): String? {
         if (!imageGenKeywords.any { text.contains(it) }) return null
         var result = text
         for (kw in imageGenKeywords) result = result.replace(kw, "")
+        // 한글 조사/부사 제거
+        result = result.replace("해줘", "")
+            .replace("해봐", "")
+            .replace("줘", "")
+            .replace("좀", "")
+            .replace("그려", "")
+            .replace("만들어", "")
+            .replace("이미지", "")
+            .replace("생성", "")
         return result.trim().ifBlank { null }
     }
 
-    // ═══════════════════════════════════════════════════════
-    // 🎨 [이미지 생성] 실제 이미지 생성 (Pollinations.AI)
-    // ═══════════════════════════════════════════════════════
     private fun generateImage(prompt: String) {
         appendMessage("민정", "아 시발 $prompt 그려본다 이기야.", speak = false)
 
         lifecycleScope.launch {
             try {
-                // 프롬프트를 URL 인코딩
-                val encoded = java.net.URLEncoder.encode(prompt, "UTF-8")
+                // 1. 한글 → 영어 번역
+                val englishPrompt = translateToEnglish(prompt)
+                Log.d("MINJEONG_IMG_GEN", "번역됨: $englishPrompt")
 
-                // Pollinations.AI 이미지 생성 URL
-                // safe=false : 검열 최소화 (완전 무검열은 아님)
-                // nologo=true : 워터마크 제거 (가능한 경우)
-                // enhance=true : 프롬프트 자동 개선
-                val imageUrl = "https://image.pollinations.ai/prompt/$encoded" +
-                        "?width=512&height=512" +
-                        "&nologo=true" +
-                        "&enhance=true" +
-                        "&safe=false" +
-                        "&seed=${System.currentTimeMillis()}"
+                // 2. Hugging Face FLUX.1-schnell에 이미지 요청
+                val requestBody = JSONObject().apply {
+                    put("inputs", englishPrompt)
+                }.toString().toRequestBody("application/json".toMediaType())
 
-                Log.d("MINJEONG_IMG_GEN", "이미지 URL: $imageUrl")
+                val request = Request.Builder()
+                    .url("https://api-inference.huggingface.co/models/black-forest-labs/FLUX.1-schnell")
+                    .addHeader("Authorization", "Bearer ${BuildConfig.HF_API_KEY}")
+                    .addHeader("Content-Type", "application/json")
+                    .addHeader("Accept", "image/png")
+                    .post(requestBody)
+                    .build()
+
+                val response = withContext(Dispatchers.IO) {
+                    client.newCall(request).execute()
+                }
+
+                if (!response.isSuccessful) {
+                    val errBody = response.body?.string()
+                    Log.e("MINJEONG_IMG_GEN", "HF API 오류: ${response.code} / $errBody")
+                    throw Exception("HF API 오류: ${response.code}")
+                }
+
+                // 3. 응답 바이트를 Bitmap으로 변환
+                val imageBytes = response.body?.bytes()
+                if (imageBytes == null) throw Exception("이미지 데이터 없음")
+
+                val bitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
+                if (bitmap == null) throw Exception("Bitmap 디코딩 실패")
 
                 withContext(Dispatchers.Main) {
-                    addImageBubble("민정", imageUrl)
+                    addBitmapBubble("민정", bitmap)
                     appendMessage("민정", "다 그렸다 이기야. ($prompt)", speak = false)
                 }
             } catch (e: Exception) {
                 Log.e("MINJEONG_IMG_GEN", "이미지 생성 실패", e)
                 withContext(Dispatchers.Main) {
-                    appendMessage("민정", "아 시발 그림 그리다 터졌노 이기야.", speak = false)
+                    appendMessage("민정", "아 시발 그림 못 그렸노 이기야.\n(${e.message?.take(60)})", speak = false)
                 }
             }
         }
     }
 
-    // ═══════════════════════════════════════════════════════
-    // 🎨 [이미지 생성] 이미지 말풍선 UI 추가
-    // ═══════════════════════════════════════════════════════
-    private fun addImageBubble(sender: String, imageUrl: String) {
-        val isUser = sender == "나"
+    // 한글 → 영어 번역 (Groq API 재활용)
+    private suspend fun translateToEnglish(korean: String): String {
+        return withContext(Dispatchers.IO) {
+            try {
+                val body = JSONObject()
+                body.put("model", "openai/gpt-oss-120b")
+                val msgs = JSONArray()
+                val sys = JSONObject()
+                sys.put("role", "system")
+                sys.put("content", "You are a translator. Translate the user's Korean text to English. Output ONLY the English translation, nothing else. No explanations, no quotes.")
+                msgs.put(sys)
+                val user = JSONObject()
+                user.put("role", "user")
+                user.put("content", korean)
+                msgs.put(user)
+                body.put("messages", msgs)
+                body.put("temperature", 0.3)
+                body.put("max_completion_tokens", 100)
 
+                val requestBody = body.toString().toRequestBody("application/json".toMediaType())
+
+                val request = Request.Builder()
+                    .url("https://api.groq.com/openai/v1/chat/completions")
+                    .addHeader("Authorization", "Bearer ${BuildConfig.GROQ_API_KEY}")
+                    .addHeader("Content-Type", "application/json")
+                    .post(requestBody)
+                    .build()
+
+                client.newCall(request).execute().use { res ->
+                    val resBody = res.body?.string() ?: return@withContext korean
+                    val json = JSONObject(resBody)
+                    json.getJSONArray("choices")
+                        .getJSONObject(0)
+                        .getJSONObject("message")
+                        .optString("content", korean)
+                        .trim()
+                        .trim('"')
+                }
+            } catch (e: Exception) {
+                Log.e("MINJEONG_TRANS", "번역 실패", e)
+                korean
+            }
+        }
+    }
+
+    // Bitmap을 말풍선으로 표시
+    private fun addBitmapBubble(sender: String, bitmap: Bitmap) {
         val wrapper = LinearLayout(this)
         wrapper.orientation = LinearLayout.VERTICAL
         val wrapperParams = LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.WRAP_CONTENT,
             LinearLayout.LayoutParams.WRAP_CONTENT
         )
-        wrapperParams.gravity = if (isUser) Gravity.END else Gravity.START
+        wrapperParams.gravity = Gravity.START
         wrapperParams.topMargin = dp(10)
         wrapper.layoutParams = wrapperParams
 
-        // 라벨
         val label = TextView(this)
         label.text = sender
         label.textSize = 11f
         label.setTextColor(Color.parseColor("#A8A29E"))
         label.setPadding(dp(8), 0, dp(8), dp(4))
-        label.gravity = if (isUser) Gravity.END else Gravity.START
-        wrapper.addView(label)
 
-        // 이미지 로딩 인디케이터
-        val loadingText = TextView(this)
-        loadingText.text = "🎨 그리는 중..."
-        loadingText.textSize = 14f
-        loadingText.setTextColor(Color.parseColor("#8A8A8E"))
-        loadingText.setTypeface(null, Typeface.ITALIC)
-        loadingText.setBackgroundResource(R.drawable.bubble_image)
-        loadingText.setPadding(dp(16), dp(10), dp(16), dp(10))
-
-        // 이미지 뷰
         val imageView = ImageView(this)
         val imgSize = (resources.displayMetrics.widthPixels * 0.7).toInt()
         imageView.layoutParams = LinearLayout.LayoutParams(imgSize, imgSize)
         imageView.scaleType = ImageView.ScaleType.CENTER_CROP
         imageView.setBackgroundResource(R.drawable.bubble_image)
         imageView.clipToOutline = true
-        imageView.visibility = View.GONE
+        imageView.setImageBitmap(bitmap)
 
-        // Coil로 이미지 로드
-        imageView.load(imageUrl) {
-            listener(
-                onSuccess = { _, _ ->
-                    loadingText.visibility = View.GONE
-                    imageView.visibility = View.VISIBLE
-                    scrollView.post { scrollView.fullScroll(View.FOCUS_DOWN) }
-                },
-                onError = { _, _ ->
-                    loadingText.text = "아 시발 그림 못 그렸노 이기야."
-                    loadingText.setTextColor(Color.parseColor("#8A8A8E"))
-                }
-            )
-        }
-
-        wrapper.addView(loadingText)
+        wrapper.addView(label)
         wrapper.addView(imageView)
         chatContainer.addView(wrapper)
 
@@ -818,15 +857,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             val role = m.getString("role")
             if (role == "system") continue
             val sender = if (role == "user") "나" else "민정"
-            val content = m.getString("content")
-
-            // 이미지 생성 결과가 저장된 메시지면 이미지 말풍선으로 렌더링
-            if (content.startsWith("__IMAGE__:")) {
-                val url = content.removePrefix("__IMAGE__:")
-                addImageBubble(sender, url)
-            } else {
-                addBubble(sender, content, animate = false)
-            }
+            addBubble(sender, m.getString("content"), animate = false)
         }
     }
 
@@ -1081,24 +1112,13 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     }
 
     private fun sendToGroq(userText: String) {
-        // 이미지 생성 요청 감지
+        // ⭐ 이미지 생성 요청 감지
         val imageGenPrompt = extractImageGenPrompt(userText)
         if (imageGenPrompt != null) {
             val userMsg = JSONObject()
             userMsg.put("role", "user")
             userMsg.put("content", userText)
             messages.put(userMsg)
-
-            // 이미지 URL을 assistant 메시지로도 저장 (다음에 다시 열었을 때 복원용)
-            val imgUrl = "https://image.pollinations.ai/prompt/" +
-                    java.net.URLEncoder.encode(imageGenPrompt, "UTF-8") +
-                    "?width=512&height=512&nologo=true&enhance=true&safe=false&seed=${System.currentTimeMillis()}"
-
-            val assistantMsg = JSONObject()
-            assistantMsg.put("role", "assistant")
-            assistantMsg.put("content", "__IMAGE__:$imgUrl")
-            messages.put(assistantMsg)
-
             saveCurrentSession()
             generateImage(imageGenPrompt)
             return
@@ -1240,8 +1260,15 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
         val start = maxOf(1, messages.length() - maxHistoryCount)
         for (i in start until messages.length()) {
-            val msg = JSONObject(messages.getJSONObject(i).toString())
-            if (i == messages.length() - 1 && msg.getString("role") == "user") {
+            val raw = messages.getJSONObject(i)
+            val role = raw.getString("role")
+            val content = raw.getString("content")
+
+            // ⭐ 이미지 URL 메시지는 Groq에 전달하지 않음 (이제 __IMAGE__ 없음)
+            if (content.startsWith("__IMAGE__:")) continue
+
+            val msg = JSONObject(raw.toString())
+            if (i == messages.length() - 1 && role == "user") {
                 msg.put("content", apiText)
             }
             trimmed.put(msg)
