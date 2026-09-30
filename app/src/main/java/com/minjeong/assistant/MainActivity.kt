@@ -15,9 +15,11 @@ import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
 import android.os.Bundle
 import android.speech.tts.TextToSpeech
+import android.util.Log
 import android.view.Gravity
 import android.view.View
 import android.view.animation.DecelerateInterpolator
+import android.webkit.WebView
 import android.widget.ArrayAdapter
 import android.widget.EditText
 import android.widget.ImageView
@@ -142,8 +144,20 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
+        // NewPipe Extractor 초기화
         try {
             NewPipe.init(DownloaderImpl())
+        } catch (_: Exception) {}
+
+        // WebView 초기화 (PoToken 생성 준비)
+        try {
+            WebView.setWebContentsDebuggingEnabled(false)
+            val webView = WebView(this)
+            webView.settings.javaScriptEnabled = true
+            webView.settings.domStorageEnabled = true
+            webView.settings.userAgentString =
+                "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
+            webView.loadUrl("about:blank")
         } catch (_: Exception) {}
 
         prefs = getSharedPreferences("minjeong_chats", MODE_PRIVATE)
@@ -584,14 +598,17 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         lifecycleScope.launch {
             val result = withContext(Dispatchers.IO) {
                 try {
+                    Log.d("MINJEONG_MUSIC", "검색 시작: $query")
                     val searchExtractor = ServiceList.YouTube.getSearchExtractor(query)
                     searchExtractor.fetchPage()
                     val items = searchExtractor.initialPage.items
                         .filterIsInstance<StreamInfoItem>()
+                    Log.d("MINJEONG_MUSIC", "검색 결과 개수: ${items.size}")
                     if (items.isEmpty()) return@withContext null
 
-                    for (item in items.take(5)) {
+                    for ((idx, item) in items.take(5).withIndex()) {
                         try {
+                            Log.d("MINJEONG_MUSIC", "[$idx] 시도: ${item.url}")
                             val info = StreamInfo.getInfo(ServiceList.YouTube, item.url)
                             val audioStream = info.audioStreams
                                 .filter { !it.url.isNullOrBlank() }
@@ -599,14 +616,18 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
                             val streamUrl = audioStream?.url
                             if (!streamUrl.isNullOrBlank()) {
+                                Log.d("MINJEONG_MUSIC", "[$idx] 성공!")
                                 return@withContext Triple(streamUrl, item.name, item.uploaderName)
                             }
                         } catch (e: Exception) {
+                            Log.e("MINJEONG_MUSIC", "[$idx] 실패: ${e.message}", e)
                             continue
                         }
                     }
+                    Log.e("MINJEONG_MUSIC", "5개 다 실패")
                     null
                 } catch (e: Exception) {
+                    Log.e("MINJEONG_MUSIC", "검색 자체 실패: ${e.message}", e)
                     null
                 }
             }
@@ -632,7 +653,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
         if (exoPlayer == null) {
             val dataSourceFactory = DefaultHttpDataSource.Factory()
-                .setUserAgent("Mozilla/5.0 (Linux; Android 10)")
+                .setUserAgent("Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36")
                 .setAllowCrossProtocolRedirects(true)
             val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory)
             exoPlayer = ExoPlayer.Builder(this)
