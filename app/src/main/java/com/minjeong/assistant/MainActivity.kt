@@ -144,12 +144,10 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        // NewPipe Extractor 초기화
         try {
             NewPipe.init(DownloaderImpl())
         } catch (_: Exception) {}
 
-        // WebView 초기화 (PoToken 생성 준비)
         try {
             WebView.setWebContentsDebuggingEnabled(false)
             val webView = WebView(this)
@@ -199,6 +197,12 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                     if (p.isPlaying) p.pause() else p.play()
                 }
             }
+        }
+
+        miniPlayer.setOnLongClickListener {
+            stopPlayback()
+            appendMessage("민정", "아 시발 껐다 이기야.", speak = false)
+            true
         }
 
         sessionListView.setOnItemClickListener { _, _, position, _ ->
