@@ -44,13 +44,15 @@ dependencies {
     implementation 'androidx.drawerlayout:drawerlayout:1.2.0'
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
 
-    // Core library desugaring
     coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.4'
 
-    // Media3 ExoPlayer (앱 내 오디오 재생)
     implementation "androidx.media3:media3-exoplayer:1.4.1"
     implementation "androidx.media3:media3-datasource:1.4.1"
 
-    // NewPipe Extractor (YouTube 검색 + 스트리밍 URL 추출)
     implementation 'com.github.TeamNewPipe:NewPipeExtractor:v0.26.5'
+
+    // ML Kit - 텍스트 인식 (한국어)
+    implementation 'com.google.mlkit:text-recognition-korean:16.0.1'
+    // ML Kit - 이미지 라벨링
+    implementation 'com.google.mlkit:image-labeling:17.0.9'
 }
