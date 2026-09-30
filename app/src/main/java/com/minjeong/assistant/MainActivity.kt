@@ -471,7 +471,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                 }.toString().toRequestBody("application/json".toMediaType())
 
                 val request = Request.Builder()
-    .url("https://api-inference.huggingface.co/models/black-forest-labs/FLUX.1-schnell")
+    .url("https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-schnell")
 
                     .addHeader("Authorization", "Bearer ${BuildConfig.HF_API_KEY}")
                     .addHeader("Content-Type", "application/json")
