@@ -13,6 +13,7 @@ android {
         versionName "1.0"
         buildConfigField "String", "GROQ_API_KEY", "\"${project.findProperty('GROQ_API_KEY') ?: ""}\""
         buildConfigField "String", "HF_API_KEY", "\"${project.findProperty('HF_API_KEY') ?: ""}\""
+        buildConfigField "String", "OPENROUTER_API_KEY", "\"${project.findProperty('OPENROUTER_API_KEY') ?: ""}\""
     }
 
     buildFeatures {
