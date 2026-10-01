@@ -513,7 +513,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         return withContext(Dispatchers.IO) {
             try {
                 val body = JSONObject()
-                body.put("model", "openai/gpt-oss-120b")
+                body.put("model", "meta-llama/llama-4-scout-17b-16e-instruct")
                 val msgs = JSONArray()
                 val sys = JSONObject()
                 sys.put("role", "system")
@@ -1160,7 +1160,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         val needSearch = searchWords.any { apiText.contains(it) }
 
         val body = JSONObject()
-        body.put("model", "openai/gpt-oss-120b")
+        body.put("model", "meta-llama/llama-4-scout-17b-16e-instruct")
         body.put("messages", buildTrimmedMessagesForImage(apiText))
         body.put("temperature", 1)
         body.put("max_completion_tokens", 512)
