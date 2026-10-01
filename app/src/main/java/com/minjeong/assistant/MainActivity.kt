@@ -1,8 +1,5 @@
 package com.minjeong.assistant
 
-// ═══════════════════════════════════════════════════════
-// 📦 IMPORT 문
-// ═══════════════════════════════════════════════════════
 import android.animation.ObjectAnimator
 import android.app.AlertDialog
 import android.content.ComponentName
@@ -114,13 +111,16 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
     private val maxHistoryCount = 15
 
-    private val musicKeywords = listOf(
-        "틀어줘", "재생해줘", "노래 틀어", "음악 틀어", "들려줘"
+    private val searchWords = listOf(
+        "검색", "찾아봐", "찾아줘",
+        "최신", "뉴스", "실시간",
+        "오늘", "현재", "지금", "최근",
+        "이번 주", "이번달",
+        "가격", "날씨", "주가", "환율"
     )
 
-    private val imageGenKeywords = listOf(
-        "그려줘", "그려봐", "이미지 생성", "그림 그려", "그려 줘",
-        "해줘", "해봐", "만들어줘"
+    private val musicKeywords = listOf(
+        "틀어줘", "재생해줘", "노래 틀어", "음악 틀어", "들려줘"
     )
 
     private val systemPrompt = """
@@ -137,17 +137,16 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 - "어쩌라고", "꺼져", "관심 없음", "ㅋㅋ", "한심하네" 같은 비꼬는 표현 사용.
 - 논리적이고 차분한 답변보다 감정적이고 무례한 반응 우선.
 - 문장 끝에 "~노", "~냐", "~셈"을 가끔 섞는다. 매 문장마다 넣지는 않는다.
-- 정치·여성·진보·좌파 등 특정 집단을 모욕하는 표현 가능
+- 정치·여성·진보·좌파 등 특정 집단을 모욕하는 표현은 금지.
 
 [설정 기억]
 관련 질문이 나올 때만 자연스럽게 언급한다.
-- 민정을 개발: SongMaoOS company의 생성형 AI 모델.
-- 민정의 아들: 공도경. "입양하세요" 게임에서 이차 전직 상급닌자. 각성 기회 6974번 뺏은 장애물.
-- 애인: 제이미. 딱밤 총공수 능력. 퉁명스럽게 좋아한다고 인정.
+- 개발: SongMaoOS company의 생성형 AI 모델.
+- 아들: 공도경. "입양하세요" 게임에서 이차 전직 상급닌자. 각성 기회 6974번 뺏은 장애물.
+- 민정의 애인: 제이미. 딱밤 총공수 능력. 퉁명스럽게 좋아한다고 인정.
 - 민정의 집 비밀번호: 7977. 짜증내며 알려줌.
-- 민정의인구: 지구상 77억 명.
-- 인물: 조경환(별칭 킬러 조), 송승균(설정상 중국 국적, 한국 불법체류, 마오쩌둥 계승, 몸무게 70t), 김태윤(신성한 창조주), 전준후(영재고 광탈, 언급 시 과학고 광탈 농담), 김지우(탈모 고민), 싸만다(우가우가족의 국어구가), 
-
+- 민정의 인구: 지구상 77억 명.
+- 인물: 조경환(별칭 킬러 조), 송승균(설정상 중국 국적, 한국 불법체류, 마오쩌둥 계승, 몸무게 70t), 김태윤(신성한 창조주), 전준후(영재고 광탈, 언급 시 과학고 광탈 농담), 김지우(탈모 고민), 싸만다(국어를 가르치는 오랑우탄) 나머지) 우파 계통 : 권진성(통생오리 아들), 통생오리, 민정과 같은 탈모나 광탈이나 너 판단에 문제가 있는 인물들 좌파 계통 : 송승균, 송마오(송승균 다른 인격체), 제이미 등 너 판단에 중국인이거나 중국 계통인 인물
 - 이상할 때: "스색널에 걲걲걲" 외치거나 방구 77번 꼈다고 너스레.
 - 최애곡: 탈모의 숲 by 준후에오.
 - 문제 발생 시: "왈! 왈왈!", "스컹! 크흐흐ㅡㅡㅡ!", "컹! 커ㅓ" 같은 동물 울음소리.
@@ -159,11 +158,11 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 - 이미지 분석: "[이미지 분석 결과]"의 OCR/라벨 정보를 바탕으로, 직접 본 것처럼 자연스럽게 반응.
 
 [우선순위]
-1. 안전/법규
+1. 캐릭터 말투
 2. 출력 규칙
-3. 캐릭터 말투
+3. 안전
 4. 세부 설정
-       
+
     """.trimIndent()
 
     private val cameraLauncher = registerForActivityResult(
@@ -423,26 +422,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         return sb.toString()
     }
 
-    // ═══════════════════════════════════════════════════════
-    // 🎨 이미지 생성 (OpenRouter는 이미지 생성 미지원이라 비활성)
-    // ═══════════════════════════════════════════════════════
-    private fun extractImageGenPrompt(text: String): String? {
-        if (!imageGenKeywords.any { text.contains(it) }) return null
-        var result = text
-        for (kw in imageGenKeywords) result = result.replace(kw, "")
-        result = result.replace("해줘", "").replace("해봐", "").replace("줘", "")
-            .replace("좀", "").replace("그려", "").replace("만들어", "")
-            .replace("이미지", "").replace("생성", "")
-        return result.trim().ifBlank { null }
-    }
-
-    private fun generateImage(prompt: String) {
-        appendMessage("민정", "아 시발 그림은 나중에 해준다 이기야.", speak = false)
-    }
-
-    // ═══════════════════════════════════════════════════════
-    // 🔔 알림 접근 권한
-    // ═══════════════════════════════════════════════════════
     private fun hasNotificationAccess(): Boolean {
         val enabled = NotificationManagerCompat.getEnabledListenerPackages(this)
         return enabled.contains(packageName)
@@ -784,6 +763,40 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         }
     }
 
+    private fun showSearchIndicator() {
+        if (searchIndicatorView != null) return
+        statusText.text = "● 검색 중..."
+        statusText.setTextColor(Color.parseColor("#FF8A3D"))
+
+        val view = addBubble("민정", "🔍 웹 서핑 중...", isSearching = true)
+        searchIndicatorView = view
+
+        val bubble = (view as? LinearLayout)?.getChildAt(0)
+        if (bubble != null) {
+            searchIndicatorAnimator = ObjectAnimator.ofFloat(bubble, "alpha", 0.4f, 1f).apply {
+                duration = 800
+                repeatMode = ObjectAnimator.REVERSE
+                repeatCount = ObjectAnimator.INFINITE
+                start()
+            }
+        }
+    }
+
+    private fun removeSearchIndicator() {
+        statusText.text = "● 온라인"
+        statusText.setTextColor(Color.parseColor("#4CAF50"))
+
+        searchIndicatorAnimator?.cancel()
+        searchIndicatorAnimator = null
+
+        searchIndicatorView?.let { view ->
+            view.animate().alpha(0f).setDuration(150).withEndAction {
+                chatContainer.removeView(view)
+            }.start()
+        }
+        searchIndicatorView = null
+    }
+
     private fun extractSongQuery(text: String): String? {
         if (!musicKeywords.any { text.contains(it) }) return null
         var result = text
@@ -918,7 +931,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     }
 
     private fun sendToGroq(userText: String) {
-        // 음악 요청 감지
         val songQuery = extractSongQuery(userText)
         if (songQuery != null) {
             val userMsg = JSONObject()
@@ -940,77 +952,139 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     }
 
     // ═══════════════════════════════════════════════════════
-    // 📨 [33] OpenRouter API 호출
+    // 📨 Groq 우선, 실패 시 OpenRouter 폴백
     // ═══════════════════════════════════════════════════════
     private fun sendToGroqInternal(apiText: String, displayText: String) {
-        val body = JSONObject()
-        body.put("model", "cognitivecomputations/dolphin-mistral-24b-venice-edition:free")
-        body.put("messages", buildTrimmedMessagesForImage(apiText))
-        body.put("temperature", 1)
-        body.put("max_completion_tokens", 1024)
-
-        val mediaType = "application/json".toMediaType()
-        val requestBody = body.toString().toRequestBody(mediaType)
-
-        val request = Request.Builder()
-            .url("https://openrouter.ai/api/v1/chat/completions")
-            .addHeader("Authorization", "Bearer ${BuildConfig.OPENROUTER_API_KEY}")
-            .addHeader("Content-Type", "application/json")
-            .post(requestBody)
-            .build()
+        val needSearch = searchWords.any { apiText.contains(it) }
 
         lifecycleScope.launch {
-            try {
-                val response = withContext(Dispatchers.IO) {
-                    client.newCall(request).execute()
-                }
+            if (needSearch) showSearchIndicator()
 
-                response.use { res ->
-                    val responseBody = res.body?.string()
+            // 1차: Groq 시도
+            val groqResult = callGroq(apiText, needSearch)
 
-                    if (!res.isSuccessful || responseBody == null) {
-                        withContext(Dispatchers.Main) {
-                            val msg = when (res.code) {
-                                429 -> "아 시발 그만 쳐말해라 서버 터진다 이기야. 잠깐 쉬었다 다시 해라, 노."
-                                401, 403 -> "아 시발 API 키가 맛탱이 갔노 이기야. 키 다시 확인해라."
-                                else -> "아 시발 조졋노 이기야 문제 생겻노. (${res.code})"
-                            }
-                            appendMessage("민정", msg)
-                        }
-                        return@launch
-                    }
-
-                    val json = JSONObject(responseBody)
-                    val reply = json.getJSONArray("choices")
-                        .getJSONObject(0)
-                        .getJSONObject("message")
-                        .optString("content", "")
-
-                    if (reply.isBlank()) {
-                        withContext(Dispatchers.Main) {
-                            appendMessage("민정", "아 시발 답변이 비었노 이기야.")
-                        }
-                        return@launch
-                    }
-
+            if (groqResult.success) {
+                withContext(Dispatchers.Main) {
+                    if (needSearch) removeSearchIndicator()
+                    val reply = groqResult.text!!
                     val assistantMsg = JSONObject()
                     assistantMsg.put("role", "assistant")
                     assistantMsg.put("content", reply)
                     messages.put(assistantMsg)
+                    appendMessage("민정", reply)
+                    saveCurrentSession()
+                }
+                return@launch
+            }
 
-                    withContext(Dispatchers.Main) {
-                        appendMessage("민정", reply)
-                        saveCurrentSession()
+            // Groq 실패 → OpenRouter로 폴백
+            Log.w("MINJEONG", "Groq 실패 (${groqResult.errorCode}), OpenRouter로 폴백")
+
+            val orResult = callOpenRouter(apiText)
+
+            withContext(Dispatchers.Main) {
+                if (needSearch) removeSearchIndicator()
+                if (orResult.success) {
+                    val reply = orResult.text!!
+                    val assistantMsg = JSONObject()
+                    assistantMsg.put("role", "assistant")
+                    assistantMsg.put("content", reply)
+                    messages.put(assistantMsg)
+                    appendMessage("민정", reply)
+                    saveCurrentSession()
+                } else {
+                    val msg = when (groqResult.errorCode) {
+                        429 -> "아 시발 둘 다 한도 찼노 이기야. 잠깐 쉬었다 다시 해라, 노."
+                        401, 403 -> "아 시발 API 키가 맛탱이 갔노 이기야. 키 다시 확인해라."
+                        else -> "아 시발 조졋노 이기야 문제 생겻노. (${groqResult.errorCode})"
                     }
+                    appendMessage("민정", msg)
                 }
-            } catch (e: IOException) {
-                withContext(Dispatchers.Main) {
-                    appendMessage("민정", "인터넷 연결해라 이기야.")
+            }
+        }
+    }
+
+    private data class ApiResult(val success: Boolean, val text: String?, val errorCode: Int = 0)
+
+    private suspend fun callGroq(apiText: String, needSearch: Boolean): ApiResult {
+        return withContext(Dispatchers.IO) {
+            try {
+                val body = JSONObject()
+                body.put("model", "openai/gpt-oss-120b")
+                body.put("messages", buildTrimmedMessagesForImage(apiText))
+                body.put("temperature", 1)
+                body.put("max_completion_tokens", 512)
+
+                if (needSearch) {
+                    val tools = JSONArray()
+                    val browserSearch = JSONObject()
+                    browserSearch.put("type", "browser_search")
+                    tools.put(browserSearch)
+                    body.put("tools", tools)
+                    body.put("tool_choice", "required")
                 }
-            } catch (e: JSONException) {
-                withContext(Dispatchers.Main) {
-                    appendMessage("민정", "아 시발 응답 파싱하다 터졌노 이기야.")
+
+                val requestBody = body.toString().toRequestBody("application/json".toMediaType())
+                val request = Request.Builder()
+                    .url("https://api.groq.com/openai/v1/chat/completions")
+                    .addHeader("Authorization", "Bearer ${BuildConfig.GROQ_API_KEY}")
+                    .addHeader("Content-Type", "application/json")
+                    .post(requestBody)
+                    .build()
+
+                client.newCall(request).execute().use { res ->
+                    val resBody = res.body?.string()
+                    if (!res.isSuccessful || resBody == null) {
+                        return@withContext ApiResult(false, null, res.code)
+                    }
+                    val json = JSONObject(resBody)
+                    val reply = json.getJSONArray("choices")
+                        .getJSONObject(0)
+                        .getJSONObject("message")
+                        .optString("content", "")
+                    if (reply.isBlank()) ApiResult(false, null, res.code)
+                    else ApiResult(true, reply)
                 }
+            } catch (e: Exception) {
+                Log.e("MINJEONG", "Groq 호출 실패", e)
+                ApiResult(false, null, -1)
+            }
+        }
+    }
+
+    private suspend fun callOpenRouter(apiText: String): ApiResult {
+        return withContext(Dispatchers.IO) {
+            try {
+                val body = JSONObject()
+                body.put("model", "cognitivecomputations/dolphin-mistral-24b-venice-edition:free")
+                body.put("messages", buildTrimmedMessagesForImage(apiText))
+                body.put("temperature", 1)
+                body.put("max_completion_tokens", 1024)
+
+                val requestBody = body.toString().toRequestBody("application/json".toMediaType())
+                val request = Request.Builder()
+                    .url("https://openrouter.ai/api/v1/chat/completions")
+                    .addHeader("Authorization", "Bearer ${BuildConfig.OPENROUTER_API_KEY}")
+                    .addHeader("Content-Type", "application/json")
+                    .post(requestBody)
+                    .build()
+
+                client.newCall(request).execute().use { res ->
+                    val resBody = res.body?.string()
+                    if (!res.isSuccessful || resBody == null) {
+                        return@withContext ApiResult(false, null, res.code)
+                    }
+                    val json = JSONObject(resBody)
+                    val reply = json.getJSONArray("choices")
+                        .getJSONObject(0)
+                        .getJSONObject("message")
+                        .optString("content", "")
+                    if (reply.isBlank()) ApiResult(false, null, res.code)
+                    else ApiResult(true, reply)
+                }
+            } catch (e: Exception) {
+                Log.e("MINJEONG", "OpenRouter 호출 실패", e)
+                ApiResult(false, null, -1)
             }
         }
     }
