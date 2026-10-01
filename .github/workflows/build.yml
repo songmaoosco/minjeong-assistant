@@ -1,58 +1,30 @@
-apply plugin: 'com.android.application'
-apply plugin: 'kotlin-android'
+name: Build Minjeong Android APK
 
-android {
-    namespace 'com.minjeong.assistant'
-    compileSdk 34
+on:
+  workflow_dispatch:
 
-    defaultConfig {
-        applicationId "com.minjeong.assistant"
-        minSdk 24
-        targetSdk 34
-        versionCode 1
-        versionName "1.0"
-        buildConfigField "String", "GROQ_API_KEY", "\"${project.findProperty('GROQ_API_KEY') ?: ""}\""
-        buildConfigField "String", "HF_API_KEY", "\"${project.findProperty('HF_API_KEY') ?: ""}\""
-        buildConfigField "String", "OPENROUTER_API_KEY", "\"${project.findProperty('OPENROUTER_API_KEY') ?: ""}\""
-    }
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
 
-    buildFeatures {
-        buildConfig true
-    }
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
 
-    compileOptions {
-        sourceCompatibility JavaVersion.VERSION_17
-        targetCompatibility JavaVersion.VERSION_17
-        coreLibraryDesugaringEnabled true
-    }
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.4'
 
-    kotlinOptions {
-        jvmTarget = "17"
-    }
+      - name: Build APK with Gradle
+        run: gradle assembleDebug -PGROQ_API_KEY=${{ secrets.GROQ_API_KEY }} -PHF_API_KEY=${{ secrets.HF_API_KEY }} -POPENROUTER_API_KEY=${{ secrets.OPENROUTER_API_KEY }}
 
-    packaging {
-        resources {
-            excludes += ['/META-INF/{AL2.0,LGPL2.1}']
-        }
-    }
-}
-
-dependencies {
-    implementation 'androidx.core:core-ktx:1.12.0'
-    implementation 'androidx.appcompat:appcompat:1.6.1'
-    implementation 'com.google.android.material:material:1.11.0'
-    implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
-    implementation 'com.squareup.okhttp3:okhttp:4.12.0'
-    implementation 'androidx.drawerlayout:drawerlayout:1.2.0'
-    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
-
-    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.4'
-
-    implementation "androidx.media3:media3-exoplayer:1.4.1"
-    implementation "androidx.media3:media3-datasource:1.4.1"
-
-    implementation 'com.github.TeamNewPipe:NewPipeExtractor:v0.26.5'
-
-    implementation 'com.google.mlkit:text-recognition-korean:16.0.1'
-    implementation 'com.google.mlkit:image-labeling:17.0.9'
-}
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: minjeong-voice-assistant
+          path: app/build/outputs/apk/debug/app-debug.apk
