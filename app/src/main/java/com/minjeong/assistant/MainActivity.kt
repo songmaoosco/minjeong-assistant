@@ -1,5 +1,8 @@
 package com.minjeong.assistant
 
+// ═══════════════════════════════════════════════════════
+// 📦 IMPORT 문
+// ═══════════════════════════════════════════════════════
 import android.animation.ObjectAnimator
 import android.app.AlertDialog
 import android.content.ComponentName
@@ -111,19 +114,10 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
     private val maxHistoryCount = 15
 
-    private val searchWords = listOf(
-        "검색", "찾아봐", "찾아줘",
-        "최신", "뉴스", "실시간",
-        "오늘", "현재", "지금", "최근",
-        "이번 주", "이번달",
-        "가격", "날씨", "주가", "환율"
-    )
-
     private val musicKeywords = listOf(
         "틀어줘", "재생해줘", "노래 틀어", "음악 틀어", "들려줘"
     )
 
-    // ⭐ 이미지 생성 키워드 (해줘, 해봐 추가)
     private val imageGenKeywords = listOf(
         "그려줘", "그려봐", "이미지 생성", "그림 그려", "그려 줘",
         "해줘", "해봐", "만들어줘"
@@ -171,6 +165,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         - 사용자가 이미지를 보내면, "[이미지 분석 결과]" 라는 텍스트가 함께 전달돼.
         - 그 안에는 이미지에서 추출한 텍스트(OCR)와 라벨(객체 분류)이 들어있어.
         - 이 정보를 바탕으로 네 말투로 대답해. 이미지를 직접 본 것처럼 자연스럽게 말해.
+       
     """.trimIndent()
 
     private val cameraLauncher = registerForActivityResult(
@@ -247,7 +242,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
         menuBtn.setOnClickListener { drawerLayout.openDrawer(Gravity.START) }
         newChatBtn.setOnClickListener { createNewSession() }
-
         plusBtn.setOnClickListener { showImagePickerDialog() }
 
         removeImgBtn.setOnClickListener {
@@ -292,9 +286,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             AlertDialog.Builder(this)
                 .setTitle("대화 삭제")
                 .setMessage("\"$chosenTitle\"\n이 대화를 삭제할까? 이기야.")
-                .setPositiveButton("삭제") { _, _ ->
-                    deleteSession(chosenId)
-                }
+                .setPositiveButton("삭제") { _, _ -> deleteSession(chosenId) }
                 .setNegativeButton("취소", null)
                 .show()
             true
@@ -429,170 +421,25 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             sb.append("이미지 라벨: ").append(labels).append("\n")
         }
 
-        if (sb.isBlank()) {
-            sb.append("이미지에서 특별한 내용을 찾지 못했어.")
-        }
-
+        if (sb.isBlank()) sb.append("이미지에서 특별한 내용을 찾지 못했어.")
         return sb.toString()
     }
 
     // ═══════════════════════════════════════════════════════
-    // 🎨 이미지 생성 (Hugging Face FLUX.1-schnell)
+    // 🎨 이미지 생성 (OpenRouter는 이미지 생성 미지원이라 비활성)
     // ═══════════════════════════════════════════════════════
-
     private fun extractImageGenPrompt(text: String): String? {
         if (!imageGenKeywords.any { text.contains(it) }) return null
         var result = text
         for (kw in imageGenKeywords) result = result.replace(kw, "")
-        // 한글 조사/부사 제거
-        result = result.replace("해줘", "")
-            .replace("해봐", "")
-            .replace("줘", "")
-            .replace("좀", "")
-            .replace("그려", "")
-            .replace("만들어", "")
-            .replace("이미지", "")
-            .replace("생성", "")
+        result = result.replace("해줘", "").replace("해봐", "").replace("줘", "")
+            .replace("좀", "").replace("그려", "").replace("만들어", "")
+            .replace("이미지", "").replace("생성", "")
         return result.trim().ifBlank { null }
     }
 
     private fun generateImage(prompt: String) {
-        appendMessage("민정", "아 시발 $prompt 그려본다 이기야.", speak = false)
-
-        lifecycleScope.launch {
-            try {
-                // 1. 한글 → 영어 번역
-                val englishPrompt = translateToEnglish(prompt)
-                Log.d("MINJEONG_IMG_GEN", "번역됨: $englishPrompt")
-
-                // 2. Hugging Face FLUX.1-schnell에 이미지 요청
-                val requestBody = JSONObject().apply {
-                    put("inputs", englishPrompt)
-                }.toString().toRequestBody("application/json".toMediaType())
-
-                val request = Request.Builder()
-    .url("https://router.huggingface.co/hf-inference/models/stabilityai/stable-diffusion-xl-base-1.0")
-                    .addHeader("Authorization", "Bearer ${BuildConfig.HF_API_KEY}")
-                    .addHeader("Content-Type", "application/json")
-                    .addHeader("Accept", "image/png")
-                    .post(requestBody)
-                    .build()
-
-                val response = withContext(Dispatchers.IO) {
-                    client.newCall(request).execute()
-                }
-
-                if (!response.isSuccessful) {
-                    val errBody = response.body?.string()
-                    Log.e("MINJEONG_IMG_GEN", "HF API 오류: ${response.code} / $errBody")
-                    throw Exception("HF API 오류: ${response.code}")
-                }
-
-                // 3. 응답 바이트를 Bitmap으로 변환
-                val imageBytes = response.body?.bytes()
-                if (imageBytes == null) throw Exception("이미지 데이터 없음")
-
-                val bitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
-                if (bitmap == null) throw Exception("Bitmap 디코딩 실패")
-
-                withContext(Dispatchers.Main) {
-                    addBitmapBubble("민정", bitmap)
-                    appendMessage("민정", "다 그렸다 이기야. ($prompt)", speak = false)
-                }
-            } catch (e: Exception) {
-                Log.e("MINJEONG_IMG_GEN", "이미지 생성 실패", e)
-                withContext(Dispatchers.Main) {
-                    appendMessage("민정", "아 시발 그림 못 그렸노 이기야.\n(${e.message?.take(60)})", speak = false)
-                }
-            }
-        }
-    }
-
-    // 한글 → 영어 번역 (Groq API 재활용)
-    private suspend fun translateToEnglish(korean: String): String {
-        return withContext(Dispatchers.IO) {
-            try {
-                val body = JSONObject()
-                body.put("model", "meta-llama/llama-4-scout-17b-16e-instruct")
-                val msgs = JSONArray()
-                val sys = JSONObject()
-                sys.put("role", "system")
-                sys.put("content", "You are a translator. Translate the user's Korean text to English. Output ONLY the English translation, nothing else. No explanations, no quotes.")
-                msgs.put(sys)
-                val user = JSONObject()
-                user.put("role", "user")
-                user.put("content", korean)
-                msgs.put(user)
-                body.put("messages", msgs)
-                body.put("temperature", 0.3)
-                body.put("max_completion_tokens", 100)
-
-                val requestBody = body.toString().toRequestBody("application/json".toMediaType())
-
-                val request = Request.Builder()
-                    .url("https://api.groq.com/openai/v1/chat/completions")
-                    .addHeader("Authorization", "Bearer ${BuildConfig.GROQ_API_KEY}")
-                    .addHeader("Content-Type", "application/json")
-                    .post(requestBody)
-                    .build()
-
-                client.newCall(request).execute().use { res ->
-                    val resBody = res.body?.string() ?: return@withContext korean
-                    val json = JSONObject(resBody)
-                    json.getJSONArray("choices")
-                        .getJSONObject(0)
-                        .getJSONObject("message")
-                        .optString("content", korean)
-                        .trim()
-                        .trim('"')
-                }
-            } catch (e: Exception) {
-                Log.e("MINJEONG_TRANS", "번역 실패", e)
-                korean
-            }
-        }
-    }
-
-    // Bitmap을 말풍선으로 표시
-    private fun addBitmapBubble(sender: String, bitmap: Bitmap) {
-        val wrapper = LinearLayout(this)
-        wrapper.orientation = LinearLayout.VERTICAL
-        val wrapperParams = LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.WRAP_CONTENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT
-        )
-        wrapperParams.gravity = Gravity.START
-        wrapperParams.topMargin = dp(10)
-        wrapper.layoutParams = wrapperParams
-
-        val label = TextView(this)
-        label.text = sender
-        label.textSize = 11f
-        label.setTextColor(Color.parseColor("#A8A29E"))
-        label.setPadding(dp(8), 0, dp(8), dp(4))
-
-        val imageView = ImageView(this)
-        val imgSize = (resources.displayMetrics.widthPixels * 0.7).toInt()
-        imageView.layoutParams = LinearLayout.LayoutParams(imgSize, imgSize)
-        imageView.scaleType = ImageView.ScaleType.CENTER_CROP
-        imageView.setBackgroundResource(R.drawable.bubble_image)
-        imageView.clipToOutline = true
-        imageView.setImageBitmap(bitmap)
-
-        wrapper.addView(label)
-        wrapper.addView(imageView)
-        chatContainer.addView(wrapper)
-
-        // 등장 애니메이션
-        wrapper.alpha = 0f
-        wrapper.translationY = dp(16).toFloat()
-        wrapper.animate()
-            .alpha(1f).translationY(0f)
-            .setDuration(220)
-            .setInterpolator(DecelerateInterpolator())
-            .start()
-
-        scrollView.post { scrollView.fullScroll(View.FOCUS_DOWN) }
+        appendMessage("민정", "아 시발 그림은 나중에 해준다 이기야.", speak = false)
     }
 
     // ═══════════════════════════════════════════════════════
@@ -650,10 +497,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     }
 
     private fun updateNowPlaying(controllers: List<MediaController>?) {
-        if (controllers.isNullOrEmpty()) {
-            hideNowPlaying()
-            return
-        }
+        if (controllers.isNullOrEmpty()) { hideNowPlaying(); return }
 
         var best: MediaController? = null
         var bestTime = Long.MIN_VALUE
@@ -662,10 +506,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             val state = c.playbackState ?: continue
             if (state.state != PlaybackState.STATE_PLAYING) continue
             val t = state.lastPositionUpdateTime
-            if (t > bestTime) {
-                bestTime = t
-                best = c
-            }
+            if (t > bestTime) { bestTime = t; best = c }
         }
 
         if (best == null) hideNowPlaying() else showNowPlaying(best)
@@ -709,13 +550,11 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     private fun hideNowPlaying() {
         currentMediaController = null
         if (exoPlayer != null) return
-
         if (miniPlayer.visibility == View.VISIBLE) {
             miniPlayer.animate().alpha(0f).setDuration(180).withEndAction {
                 miniPlayer.visibility = View.GONE
             }.start()
         }
-
         fadeOutBackground()
     }
 
@@ -947,40 +786,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         }
     }
 
-    private fun showSearchIndicator() {
-        if (searchIndicatorView != null) return
-        statusText.text = "● 검색 중..."
-        statusText.setTextColor(Color.parseColor("#FF8A3D"))
-
-        val view = addBubble("민정", "🔍 웹 서핑 중...", isSearching = true)
-        searchIndicatorView = view
-
-        val bubble = (view as? LinearLayout)?.getChildAt(0)
-        if (bubble != null) {
-            searchIndicatorAnimator = ObjectAnimator.ofFloat(bubble, "alpha", 0.4f, 1f).apply {
-                duration = 800
-                repeatMode = ObjectAnimator.REVERSE
-                repeatCount = ObjectAnimator.INFINITE
-                start()
-            }
-        }
-    }
-
-    private fun removeSearchIndicator() {
-        statusText.text = "● 온라인"
-        statusText.setTextColor(Color.parseColor("#4CAF50"))
-
-        searchIndicatorAnimator?.cancel()
-        searchIndicatorAnimator = null
-
-        searchIndicatorView?.let { view ->
-            view.animate().alpha(0f).setDuration(150).withEndAction {
-                chatContainer.removeView(view)
-            }.start()
-        }
-        searchIndicatorView = null
-    }
-
     private fun extractSongQuery(text: String): String? {
         if (!musicKeywords.any { text.contains(it) }) return null
         var result = text
@@ -994,38 +799,26 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         lifecycleScope.launch {
             val result = withContext(Dispatchers.IO) {
                 try {
-                    Log.d("MINJEONG_MUSIC", "검색 시작: $query")
                     val searchExtractor = ServiceList.YouTube.getSearchExtractor(query)
                     searchExtractor.fetchPage()
                     val items = searchExtractor.initialPage.items
                         .filterIsInstance<StreamInfoItem>()
-                    Log.d("MINJEONG_MUSIC", "검색 결과 개수: ${items.size}")
                     if (items.isEmpty()) return@withContext null
 
                     for ((idx, item) in items.take(5).withIndex()) {
                         try {
-                            Log.d("MINJEONG_MUSIC", "[$idx] 시도: ${item.url}")
                             val info = StreamInfo.getInfo(ServiceList.YouTube, item.url)
                             val audioStream = info.audioStreams
                                 .filter { !it.url.isNullOrBlank() }
                                 .maxByOrNull { it.averageBitrate }
-
                             val streamUrl = audioStream?.url
                             if (!streamUrl.isNullOrBlank()) {
-                                Log.d("MINJEONG_MUSIC", "[$idx] 성공!")
                                 return@withContext Triple(streamUrl, item.name, item.uploaderName)
                             }
-                        } catch (e: Exception) {
-                            Log.e("MINJEONG_MUSIC", "[$idx] 실패: ${e.message}", e)
-                            continue
-                        }
+                        } catch (e: Exception) { continue }
                     }
-                    Log.e("MINJEONG_MUSIC", "5개 다 실패")
                     null
-                } catch (e: Exception) {
-                    Log.e("MINJEONG_MUSIC", "검색 자체 실패: ${e.message}", e)
-                    null
-                }
+                } catch (e: Exception) { null }
             }
 
             if (result == null) {
@@ -1036,7 +829,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             }
 
             val (streamUrl, title, uploader) = result
-
             withContext(Dispatchers.Main) {
                 startPlayback(streamUrl, title, uploader)
                 appendMessage("민정", "틀었다 이기야. $title", speak = false)
@@ -1093,7 +885,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         }.start()
     }
 
-    private fun buildTrimmedMessages(): JSONArray {
+    private fun buildTrimmedMessagesForImage(apiText: String): JSONArray {
         val trimmed = JSONArray()
         if (messages.length() == 0) return trimmed
 
@@ -1105,10 +897,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             val t = miniTitle.text?.toString().orEmpty().trim()
             val a = miniArtist.text?.toString().orEmpty().trim()
             if (t.isNotBlank() && t != "재생 중") {
-                "\n\n[현재 재생 중인 음악]\n" +
-                "- 제목: $t\n" +
-                "- 아티스트: $a\n" +
-                "사용자가 음악에 대해 물어보면 이 정보를 참고해서 대답해라."
+                "\n\n[현재 재생 중인 음악]\n- 제목: $t\n- 아티스트: $a\n사용자가 음악에 대해 물어보면 이 정보를 참고해서 대답해라."
             } else ""
         } else ""
 
@@ -1117,24 +906,20 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
         val start = maxOf(1, messages.length() - maxHistoryCount)
         for (i in start until messages.length()) {
-            trimmed.put(messages.getJSONObject(i))
+            val raw = messages.getJSONObject(i)
+            val role = raw.getString("role")
+            val content = raw.getString("content")
+            if (content.startsWith("__IMAGE__:")) continue
+            val msg = JSONObject(raw.toString())
+            if (i == messages.length() - 1 && role == "user") {
+                msg.put("content", apiText)
+            }
+            trimmed.put(msg)
         }
         return trimmed
     }
 
     private fun sendToGroq(userText: String) {
-        // ⭐ 이미지 생성 요청 감지
-        val imageGenPrompt = extractImageGenPrompt(userText)
-        if (imageGenPrompt != null) {
-            val userMsg = JSONObject()
-            userMsg.put("role", "user")
-            userMsg.put("content", userText)
-            messages.put(userMsg)
-            saveCurrentSession()
-            generateImage(imageGenPrompt)
-            return
-        }
-
         // 음악 요청 감지
         val songQuery = extractSongQuery(userText)
         if (songQuery != null) {
@@ -1156,37 +941,27 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         sendToGroqInternal(userText, displayText = userText)
     }
 
+    // ═══════════════════════════════════════════════════════
+    // 📨 [33] OpenRouter API 호출
+    // ═══════════════════════════════════════════════════════
     private fun sendToGroqInternal(apiText: String, displayText: String) {
-        val needSearch = searchWords.any { apiText.contains(it) }
-
         val body = JSONObject()
-        body.put("model", "meta-llama/llama-4-scout-17b-16e-instruct")
+        body.put("model", "cognitivecomputations/dolphin-mistral-24b-venice-edition:free")
         body.put("messages", buildTrimmedMessagesForImage(apiText))
         body.put("temperature", 1)
-        body.put("max_completion_tokens", 512)
-
-        if (needSearch) {
-            val tools = JSONArray()
-            val browserSearch = JSONObject()
-            browserSearch.put("type", "browser_search")
-            tools.put(browserSearch)
-            body.put("tools", tools)
-            body.put("tool_choice", "required")
-        }
+        body.put("max_completion_tokens", 1024)
 
         val mediaType = "application/json".toMediaType()
         val requestBody = body.toString().toRequestBody(mediaType)
 
         val request = Request.Builder()
-            .url("https://api.groq.com/openai/v1/chat/completions")
-            .addHeader("Authorization", "Bearer ${BuildConfig.GROQ_API_KEY}")
+            .url("https://openrouter.ai/api/v1/chat/completions")
+            .addHeader("Authorization", "Bearer ${BuildConfig.OPENROUTER_API_KEY}")
             .addHeader("Content-Type", "application/json")
             .post(requestBody)
             .build()
 
         lifecycleScope.launch {
-            if (needSearch) showSearchIndicator()
-
             try {
                 val response = withContext(Dispatchers.IO) {
                     client.newCall(request).execute()
@@ -1197,7 +972,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
                     if (!res.isSuccessful || responseBody == null) {
                         withContext(Dispatchers.Main) {
-                            if (needSearch) removeSearchIndicator()
                             val msg = when (res.code) {
                                 429 -> "아 시발 그만 쳐말해라 서버 터진다 이기야. 잠깐 쉬었다 다시 해라, 노."
                                 401, 403 -> "아 시발 API 키가 맛탱이 갔노 이기야. 키 다시 확인해라."
@@ -1216,7 +990,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
                     if (reply.isBlank()) {
                         withContext(Dispatchers.Main) {
-                            if (needSearch) removeSearchIndicator()
                             appendMessage("민정", "아 시발 답변이 비었노 이기야.")
                         }
                         return@launch
@@ -1228,63 +1001,20 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                     messages.put(assistantMsg)
 
                     withContext(Dispatchers.Main) {
-                        if (needSearch) removeSearchIndicator()
                         appendMessage("민정", reply)
                         saveCurrentSession()
                     }
                 }
             } catch (e: IOException) {
                 withContext(Dispatchers.Main) {
-                    if (needSearch) removeSearchIndicator()
                     appendMessage("민정", "인터넷 연결해라 이기야.")
                 }
             } catch (e: JSONException) {
                 withContext(Dispatchers.Main) {
-                    if (needSearch) removeSearchIndicator()
                     appendMessage("민정", "아 시발 응답 파싱하다 터졌노 이기야.")
                 }
             }
         }
-    }
-
-    private fun buildTrimmedMessagesForImage(apiText: String): JSONArray {
-        val trimmed = JSONArray()
-        if (messages.length() == 0) return trimmed
-
-        val originalSys = messages.getJSONObject(0)
-        val sysCopy = JSONObject()
-        sysCopy.put("role", "system")
-
-        val songInfo = if (miniPlayer.visibility == View.VISIBLE) {
-            val t = miniTitle.text?.toString().orEmpty().trim()
-            val a = miniArtist.text?.toString().orEmpty().trim()
-            if (t.isNotBlank() && t != "재생 중") {
-                "\n\n[현재 재생 중인 음악]\n" +
-                "- 제목: $t\n" +
-                "- 아티스트: $a\n" +
-                "사용자가 음악에 대해 물어보면 이 정보를 참고해서 대답해라."
-            } else ""
-        } else ""
-
-        sysCopy.put("content", originalSys.getString("content") + songInfo)
-        trimmed.put(sysCopy)
-
-        val start = maxOf(1, messages.length() - maxHistoryCount)
-        for (i in start until messages.length()) {
-            val raw = messages.getJSONObject(i)
-            val role = raw.getString("role")
-            val content = raw.getString("content")
-
-            // ⭐ 이미지 URL 메시지는 Groq에 전달하지 않음 (이제 __IMAGE__ 없음)
-            if (content.startsWith("__IMAGE__:")) continue
-
-            val msg = JSONObject(raw.toString())
-            if (i == messages.length() - 1 && role == "user") {
-                msg.put("content", apiText)
-            }
-            trimmed.put(msg)
-        }
-        return trimmed
     }
 
     override fun onDestroy() {
