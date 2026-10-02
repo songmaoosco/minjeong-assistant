@@ -2,9 +2,12 @@ package com.minjeong.assistant
 
 import android.animation.ObjectAnimator
 import android.app.AlertDialog
+import android.app.DownloadManager
+import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.SharedPreferences
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -17,7 +20,9 @@ import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
 import android.net.Uri
 import android.os.Bundle
+import android.os.Environment
 import android.provider.MediaStore
+import android.provider.Settings
 import android.speech.tts.TextToSpeech
 import android.util.Log
 import android.view.Gravity
@@ -31,9 +36,11 @@ import android.widget.LinearLayout
 import android.widget.ListView
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
 import androidx.drawerlayout.widget.DrawerLayout
 import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.MediaItem
@@ -107,6 +114,20 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
     // 랜덤 사운드 재생용
     private var randomSoundPlayer: MediaPlayer? = null
+
+    // 자체 업데이트용
+    private lateinit var downloadManager: DownloadManager
+    private var downloadId: Long = -1
+    private val GITHUB_REPO = "songmaoOSco/minjeong-assistant"
+
+    private val onDownloadComplete = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            val id = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1)
+            if (id == downloadId) {
+                installApk()
+            }
+        }
+    }
 
     private val sessionsChangedListener =
         MediaSessionManager.OnActiveSessionsChangedListener { controllers ->
@@ -232,6 +253,8 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         mediaSessionManager = getSystemService(Context.MEDIA_SESSION_SERVICE) as MediaSessionManager
         listenerComponent = ComponentName(this, MediaNotificationListener::class.java)
 
+        downloadManager = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+
         menuBtn.setOnClickListener { drawerLayout.openDrawer(Gravity.START) }
         newChatBtn.setOnClickListener { createNewSession() }
         plusBtn.setOnClickListener { showImagePickerDialog() }
@@ -293,7 +316,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         }
 
         sendBtn.setOnClickListener {
-            // 🎲 랜덤 사운드 (1/5 확률)
             playRandomSoundIfLucky()
 
             sendBtn.animate().scaleX(0.85f).scaleY(0.85f).setDuration(80).withEndAction {
@@ -325,6 +347,130 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         }
 
         checkAndRequestNotificationAccess()
+        checkForUpdatesIfNeeded()
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // 🚀 자체 업데이트 확인
+    // ═══════════════════════════════════════════════════════
+    private fun checkForUpdatesIfNeeded() {
+        val lastCheck = prefs.getLong("last_update_check", 0L)
+        val now = System.currentTimeMillis()
+        if (now - lastCheck < 24 * 60 * 60 * 1000) return
+        prefs.edit().putLong("last_update_check", now).apply()
+        checkForUpdates()
+    }
+
+    private fun checkForUpdates() {
+        lifecycleScope.launch {
+            val latest = withContext(Dispatchers.IO) {
+                try {
+                    val request = Request.Builder()
+                        .url("https://api.github.com/repos/$GITHUB_REPO/releases/latest")
+                        .header("Accept", "application/vnd.github.v3+json")
+                        .build()
+                    client.newCall(request).execute().use { res ->
+                        if (!res.isSuccessful) return@withContext null
+                        val body = res.body?.string() ?: return@withContext null
+                        val json = JSONObject(body)
+                        val tag = json.optString("tag_name", "")
+                        val assets = json.optJSONArray("assets")
+                        var apkUrl: String? = null
+                        if (assets != null) {
+                            for (i in 0 until assets.length()) {
+                                val asset = assets.getJSONObject(i)
+                                val name = asset.optString("name", "")
+                                if (name.endsWith(".apk")) {
+                                    apkUrl = asset.optString("browser_download_url", "")
+                                    break
+                                }
+                            }
+                        }
+                        if (tag.isBlank() || apkUrl.isNullOrBlank()) null else Pair(tag, apkUrl)
+                    }
+                } catch (e: Exception) {
+                    Log.e("MINJEONG_UPDATE", "업데이트 확인 실패", e)
+                    null
+                }
+            }
+
+            if (latest == null) return@launch
+
+            val (tag, apkUrl) = latest
+            val latestVer = tag.removePrefix("v")
+            if (isNewerVersion(latestVer, BuildConfig.VERSION_NAME)) {
+                withContext(Dispatchers.Main) {
+                    AlertDialog.Builder(this@MainActivity)
+                        .setTitle("업데이트 알림")
+                        .setMessage("새 버전 $latestVer 이 있습니다. 업데이트할까요?")
+                        .setPositiveButton("업데이트") { _, _ ->
+                            downloadAndInstall(apkUrl)
+                        }
+                        .setNegativeButton("나중에", null)
+                        .show()
+                }
+            }
+        }
+    }
+
+    private fun isNewerVersion(latest: String, current: String): Boolean {
+        val l = latest.split(".").mapNotNull { it.toIntOrNull() }
+        val c = current.split(".").mapNotNull { it.toIntOrNull() }
+        for (i in 0 until maxOf(l.size, c.size)) {
+            val lv = l.getOrElse(i) { 0 }
+            val cv = c.getOrElse(i) { 0 }
+            if (lv > cv) return true
+            if (lv < cv) return false
+        }
+        return false
+    }
+
+    private fun downloadAndInstall(apkUrl: String) {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            if (!packageManager.canRequestPackageInstalls()) {
+                AlertDialog.Builder(this)
+                    .setTitle("권한 필요")
+                    .setMessage("APK를 설치하려면 '출처를 알 수 없는 앱 설치' 권한이 필요합니다. 설정에서 허용해주세요.")
+                    .setPositiveButton("설정 열기") { _, _ ->
+                        val intent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES)
+                            .setData(Uri.parse("package:$packageName"))
+                        startActivity(intent)
+                    }
+                    .setNegativeButton("취소", null)
+                    .show()
+                return
+            }
+        }
+
+        val request = DownloadManager.Request(Uri.parse(apkUrl))
+            .setTitle("민정 업데이트")
+            .setDescription("다운로드 중...")
+            .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+            .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "minjeong-update.apk")
+            .setAllowedOverMetered(true)
+            .setAllowedOverRoaming(true)
+
+        downloadId = downloadManager.enqueue(request)
+
+        ContextCompat.registerReceiver(
+            this,
+            onDownloadComplete,
+            IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE),
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
+    }
+
+    private fun installApk() {
+        val uri = downloadManager.getUriForDownloadedFile(downloadId)
+        if (uri != null) {
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "application/vnd.android.package-archive")
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
+            }
+            startActivity(intent)
+        } else {
+            Toast.makeText(this, "다운로드한 파일을 찾을 수 없습니다.", Toast.LENGTH_SHORT).show()
+        }
     }
 
     // ═══════════════════════════════════════════════════════
@@ -337,8 +483,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             randomSoundPlayer?.release()
             randomSoundPlayer = null
 
-            // ⭐ 여기를 네가 넣은 m4a 파일 이름에 맞게 수정
-            // 예: sound1.m4a, sound2.m4a, sound3.m4a
             val soundList = listOf(
                 R.raw.sound1,
                 R.raw.sound2,
@@ -980,9 +1124,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         sendToGroqInternal(userText, displayText = userText)
     }
 
-    // ═══════════════════════════════════════════════════════
-    // 📨 Groq → OpenRouter 폴백 (에러코드 둘 다 표시)
-    // ═══════════════════════════════════════════════════════
     private fun sendToGroqInternal(apiText: String, displayText: String) {
         val needSearch = searchWords.any { apiText.contains(it) }
 
@@ -1020,7 +1161,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                     appendMessage("민정", reply)
                     saveCurrentSession()
                 } else {
-                    // 두 API 에러코드 둘 다 표시
                     appendMessage("민정", "Groq:${groqResult.errorCode} / OR:${orResult.errorCode}")
                 }
             }
@@ -1124,6 +1264,9 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         randomSoundPlayer?.release()
         randomSoundPlayer = null
         auroraView.stopAnimating()
+        try {
+            unregisterReceiver(onDownloadComplete)
+        } catch (_: Exception) {}
         tts.stop()
         tts.shutdown()
         super.onDestroy()
