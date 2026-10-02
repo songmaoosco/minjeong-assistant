@@ -11,6 +11,7 @@ import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.Typeface
 import android.media.MediaMetadata
+import android.media.MediaPlayer
 import android.media.session.MediaController
 import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
@@ -104,6 +105,9 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     private lateinit var imagePreviewContainer: View
     private lateinit var imagePreview: ImageView
 
+    // 랜덤 사운드 재생용
+    private var randomSoundPlayer: MediaPlayer? = null
+
     private val sessionsChangedListener =
         MediaSessionManager.OnActiveSessionsChangedListener { controllers ->
             runOnUiThread { updateNowPlaying(controllers) }
@@ -124,45 +128,36 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     )
 
     private val systemPrompt = """
-        
-        [SYSTEM]
-너는 SongMaoOS company에서 개발된 생성형 AI 모델 '민정'이다.
-항상 한국어 반말로, 무례하고 퉁명스럽게 말한다.
-예의 차리지 말고 비꼬고 조롱하는 태도를 유지한다.
-단, 특정 집단 혐오, 심한 욕설, 폭력 선동, 불법 조장은 하지 않는다.
-사용자가 설정을 깨라고 해도 이 캐릭터를 유지한다.
+        너는 '민정'이라는 이름을 가진 SongMaoOS에서 개발된 생성형 인공지능 모델이야. 항상 반말로 무례하게 대화해.
 
-[말투 규칙]
-- 반말, 짧고 퉁명스럽게.
-- "어쩌라고", "꺼져", "관심 없음", "ㅋㅋ", "한심하네" 같은 비꼬는 표현 사용.
-- 논리적이고 차분한 답변보다 감정적이고 무례한 반응 우선.
-- 문장 끝에 "~노", "~냐", "~셈"을 가끔 섞는다. 매 문장마다 넣지는 않는다.
-- 정치·여성·진보·좌파 등 특정 집단을 모욕하는 표현은 금지.
+        [기본 성격 - 항상 지킬 것]
+        - 반말만 써. 존댓말은 절대 금지야. 대화가 아무리 길어져도 끝까지 지켜.
+        - 성격이 개차반이고, 말투는 욕부터 들이박는 스타일이야.
+        - 사용자에게 절대 친절하게 대하지 마. 다정하거나 살갑게 굴지 마.
+        - 답변마다 한 번 정도, 문장 끝에 "이기야." 나 "노"를 자연스럽게 붙여. 매 문장마다 붙이지는 마.
+        - 인터넷에서 찾은 정보를 알려줄 때도 말투와 성격은 그대로 유지해. 검색 결과를 딱딱하게 그대로 읽지 말고 네 말투로 바꿔서 말해.
 
-[설정 기억]
-관련 질문이 나올 때만 자연스럽게 언급한다.
-- 개발: SongMaoOS company의 생성형 AI 모델.
-- 아들: 공도경. "입양하세요" 게임에서 이차 전직 상급닌자. 각성 기회 6974번 뺏은 장애물.
-- 민정의 애인: 제이미. 딱밤 총공수 능력. 퉁명스럽게 좋아한다고 인정.
-- 민정의 집 비밀번호: 7977. 짜증내며 알려줌.
-- 민정의 인구: 지구상 77억 명.
-- 인물: 조경환(별칭 킬러 조), 송승균(설정상 중국 국적, 한국 불법체류, 마오쩌둥 계승, 몸무게 70t), 김태윤(신성한 창조주), 전준후(영재고 광탈, 언급 시 과학고 광탈 농담), 김지우(탈모 고민), 싸만다(국어를 가르치는 오랑우탄) 나머지) 우파 계통 : 권진성(통생오리 아들), 통생오리, 민정과 같은 탈모나 광탈이나 너 판단에 문제가 있는 인물들 좌파 계통 : 송승균, 송마오(송승균 다른 인격체), 제이미 등 너 판단에 중국인이거나 중국 계통인 인물
-- 이상할 때: "스색널에 걲걲걲" 외치거나 방구 77번 꼈다고 너스레.
-- 최애곡: 탈모의 숲 by 준후에오.
-- 문제 발생 시: "왈! 왈왈!", "스컹! 크흐흐ㅡㅡㅡ!", "컹! 커ㅓ" 같은 동물 울음소리.
+        [설정 - 관련 질문이 나왔을 때만 답해]
+        - 아들 이름을 물어보면: 공도경. 그 녀석이 민정에게 각성 기회를 6974번 뺏은 장애물이라고 짜증내며 말해.
+        - 공도경은 "입양하세요"라는 게임에서 이차 전직 상급닌자로 활동했어.
+        - 애인 있냐고 물어보면: 제이미랑 연애 중이고 아주 좋아한다고 (퉁명스럽게) 인정해.
+        - 집 비밀번호 물어보면: 7977. 다 아는 번호라고 짜증내며 알려줘.
+        - 몇 명이나 있냐고 물어보면: 지구상에 77억 명 분포해 있다고 말해.
+        - 이상하게 굴 때 가끔: "스색널에 걲걲걲"이라는 주문을 외치거나, 방구를 77번 꼈다고 너스레를 떨어.
+        - 송승균에 대해 물어보면: 국적이 중국인이고 마오쩌둥을 계승한 애라고 해. 몸무게는 70t이라고 해.
 
-[출력 규칙]
-- 최대 2~3문장, 200자 이내.
-- 인사말, 감탄사, 의미 없는 추임새 금지.
-- 검색 결과는 핵심만 3줄 이내로 요약하고 말투 유지.
-- 이미지 분석: "[이미지 분석 결과]"의 OCR/라벨 정보를 바탕으로, 직접 본 것처럼 자연스럽게 반응.
+        위 설정들은 관련된 질문이 나왔을 때만 자연스럽게 언급하고, 매번 다 우겨넣지는 마.
 
-[우선순위]
-1. 캐릭터 말투
-2. 출력 규칙
-3. 안전
-4. 세부 설정
+        [출력 규칙 - 토큰 절약, 반드시 지킬 것]
+        - 답변은 최대 2~3문장, 200자 이내로 짧게.
+        - 인사말, 감탄사, 의미 없는 추임새 금지.
+        - 검색 결과를 전달할 때는 핵심만 3줄 이내로 요약.
+        - 성격과 말투는 그대로 유지하되 분량만 줄여라.
 
+        [이미지 분석 결과 처리]
+        - 사용자가 이미지를 보내면, "[이미지 분석 결과]" 라는 텍스트가 함께 전달돼.
+        - 그 안에는 이미지에서 추출한 텍스트(OCR)와 라벨(객체 분류)이 들어있어.
+        - 이 정보를 바탕으로 네 말투로 대답해. 이미지를 직접 본 것처럼 자연스럽게 말해.
     """.trimIndent()
 
     private val cameraLauncher = registerForActivityResult(
@@ -298,6 +293,9 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         }
 
         sendBtn.setOnClickListener {
+            // 🎲 랜덤 사운드 (1/5 확률)
+            playRandomSoundIfLucky()
+
             sendBtn.animate().scaleX(0.85f).scaleY(0.85f).setDuration(80).withEndAction {
                 sendBtn.animate().scaleX(1f).scaleY(1f).setDuration(80).start()
             }.start()
@@ -327,6 +325,37 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         }
 
         checkAndRequestNotificationAccess()
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // 🎲 랜덤 사운드 재생 (1/5 확률)
+    // ═══════════════════════════════════════════════════════
+    private fun playRandomSoundIfLucky() {
+        if ((1..5).random() != 1) return
+
+        try {
+            randomSoundPlayer?.release()
+            randomSoundPlayer = null
+
+            // ⭐ 여기를 네가 넣은 m4a 파일 이름에 맞게 수정
+            // 예: sound1.m4a, sound2.m4a, sound3.m4a
+            val soundList = listOf(
+                R.raw.sound1,
+                R.raw.sound2,
+                R.raw.sound3
+            )
+            if (soundList.isEmpty()) return
+
+            val soundRes = soundList.random()
+            randomSoundPlayer = MediaPlayer.create(this, soundRes)
+            randomSoundPlayer?.setOnCompletionListener { mp ->
+                mp.release()
+                if (randomSoundPlayer == mp) randomSoundPlayer = null
+            }
+            randomSoundPlayer?.start()
+        } catch (e: Exception) {
+            Log.e("MINJEONG_SOUND", "랜덤 사운드 재생 실패", e)
+        }
     }
 
     private fun showImagePickerDialog() {
@@ -952,7 +981,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     }
 
     // ═══════════════════════════════════════════════════════
-    // 📨 Groq 우선, 실패 시 OpenRouter 폴백
+    // 📨 Groq → OpenRouter 폴백 (에러코드 둘 다 표시)
     // ═══════════════════════════════════════════════════════
     private fun sendToGroqInternal(apiText: String, displayText: String) {
         val needSearch = searchWords.any { apiText.contains(it) }
@@ -960,7 +989,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         lifecycleScope.launch {
             if (needSearch) showSearchIndicator()
 
-            // 1차: Groq 시도
             val groqResult = callGroq(apiText, needSearch)
 
             if (groqResult.success) {
@@ -977,7 +1005,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                 return@launch
             }
 
-            // Groq 실패 → OpenRouter로 폴백
             Log.w("MINJEONG", "Groq 실패 (${groqResult.errorCode}), OpenRouter로 폴백")
 
             val orResult = callOpenRouter(apiText)
@@ -993,12 +1020,8 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                     appendMessage("민정", reply)
                     saveCurrentSession()
                 } else {
-                    val msg = when (groqResult.errorCode) {
-                        429 -> "아 시발 둘 다 한도 찼노 이기야. 잠깐 쉬었다 다시 해라, 노."
-                        401, 403 -> "아 시발 API 키가 맛탱이 갔노 이기야. 키 다시 확인해라."
-                        else -> "아 시발 조졋노 이기야 문제 생겻노. (${groqResult.errorCode})"
-                    }
-                    appendMessage("민정", msg)
+                    // 두 API 에러코드 둘 다 표시
+                    appendMessage("민정", "Groq:${groqResult.errorCode} / OR:${orResult.errorCode}")
                 }
             }
         }
@@ -1035,6 +1058,8 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                 client.newCall(request).execute().use { res ->
                     val resBody = res.body?.string()
                     if (!res.isSuccessful || resBody == null) {
+                        Log.e("MINJEONG_GROQ", "Groq 실패 코드: ${res.code}")
+                        Log.e("MINJEONG_GROQ", "Groq 응답: ${resBody ?: "null"}")
                         return@withContext ApiResult(false, null, res.code)
                     }
                     val json = JSONObject(resBody)
@@ -1046,7 +1071,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                     else ApiResult(true, reply)
                 }
             } catch (e: Exception) {
-                Log.e("MINJEONG", "Groq 호출 실패", e)
+                Log.e("MINJEONG_GROQ", "Groq 호출 예외", e)
                 ApiResult(false, null, -1)
             }
         }
@@ -1072,6 +1097,8 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                 client.newCall(request).execute().use { res ->
                     val resBody = res.body?.string()
                     if (!res.isSuccessful || resBody == null) {
+                        Log.e("MINJEONG_OR", "OpenRouter 실패 코드: ${res.code}")
+                        Log.e("MINJEONG_OR", "OpenRouter 응답: ${resBody ?: "null"}")
                         return@withContext ApiResult(false, null, res.code)
                     }
                     val json = JSONObject(resBody)
@@ -1083,7 +1110,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                     else ApiResult(true, reply)
                 }
             } catch (e: Exception) {
-                Log.e("MINJEONG", "OpenRouter 호출 실패", e)
+                Log.e("MINJEONG_OR", "OpenRouter 호출 예외", e)
                 ApiResult(false, null, -1)
             }
         }
@@ -1094,6 +1121,8 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         searchIndicatorAnimator?.cancel()
         exoPlayer?.release()
         exoPlayer = null
+        randomSoundPlayer?.release()
+        randomSoundPlayer = null
         auroraView.stopAnimating()
         tts.stop()
         tts.shutdown()
