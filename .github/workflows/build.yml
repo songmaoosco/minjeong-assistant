@@ -6,6 +6,9 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
     steps:
       - uses: actions/checkout@v4
 
@@ -21,10 +24,18 @@ jobs:
           gradle-version: '8.4'
 
       - name: Build APK with Gradle
-        run: gradle assembleDebug -PGROQ_API_KEY=${{ secrets.GROQ_API_KEY }} -PHF_API_KEY=${{ secrets.HF_API_KEY }}
+        run: gradle assembleDebug -PGROQ_API_KEY=${{ secrets.GROQ_API_KEY }} -PHF_API_KEY=${{ secrets.HF_API_KEY }} -POPENROUTER_API_KEY=${{ secrets.OPENROUTER_API_KEY }} -PVERSION_CODE=${{ github.run_number }} -PVERSION_NAME=${{ github.run_number }}
 
-      - name: Upload APK
+      - name: Upload APK (Artifacts)
         uses: actions/upload-artifact@v4
         with:
           name: minjeong-voice-assistant
           path: app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ github.run_number }}
+          name: Release v${{ github.run_number }}
+          files: app/build/outputs/apk/debug/app-debug.apk
+          token: ${{ secrets.GITHUB_TOKEN }}
