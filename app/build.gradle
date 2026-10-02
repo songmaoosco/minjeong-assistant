@@ -9,8 +9,8 @@ android {
         applicationId "com.minjeong.assistant"
         minSdk 24
         targetSdk 34
-        versionCode 1
-        versionName "1.0"
+        versionCode Integer.parseInt(project.findProperty('VERSION_CODE') ?: "1")
+        versionName project.findProperty('VERSION_NAME') ?: "1.0"
         buildConfigField "String", "GROQ_API_KEY", "\"${project.findProperty('GROQ_API_KEY') ?: ""}\""
         buildConfigField "String", "HF_API_KEY", "\"${project.findProperty('HF_API_KEY') ?: ""}\""
         buildConfigField "String", "OPENROUTER_API_KEY", "\"${project.findProperty('OPENROUTER_API_KEY') ?: ""}\""
